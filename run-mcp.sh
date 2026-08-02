@@ -7,6 +7,10 @@
 # cd into the script's own directory (the repo root, where .env lives) before
 # exec'ing. This keeps the PE password in .env (chmod 600) instead of in the
 # Claude Code config.
+#
+# Portable across Linux and macOS: avoids `readlink -f` (GNU-only) in favor of
+# cd+pwd, which resolves the script's directory on both platforms.
 set -euo pipefail
-cd "$(dirname "$(readlink -f "$0")")"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR"
 exec python3 -m nutanix_mcp "$@"
