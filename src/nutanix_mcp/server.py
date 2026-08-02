@@ -123,7 +123,7 @@ def create_server(settings: Settings) -> tuple[Server, NutanixClient]:
         instructions=SERVER_INSTRUCTIONS,
     )
     client = NutanixClient(settings)
-    all_tools = get_all_tools()
+    all_tools = get_all_tools(settings.pe_only)
 
     # ─── Tools ────────────────────────────────────────────────────────────
 
@@ -144,6 +144,14 @@ def create_server(settings: Settings) -> tuple[Server, NutanixClient]:
     @server.call_tool()
     async def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any] | CallToolResult:
         """Execute a tool and return structured content (or an error result)."""
+        if settings.pe_only and not name.startswith("pe_"):
+            return _error_result(
+                f"Tool '{name}' requires Prism Central, but this server is "
+                "running in PE-only mode (NUTANIX_PE_ONLY=true). Only Prism "
+                "Element tools (pe_*) are available until a Prism Central is "
+                "deployed and NUTANIX_PE_ONLY is unset."
+            )
+
         handler = ALL_HANDLERS.get(name)
         if not handler:
             return _error_result(f"Unknown tool '{name}'")
@@ -165,17 +173,38 @@ def create_server(settings: Settings) -> tuple[Server, NutanixClient]:
 
     @server.list_resources()
     async def list_resources() -> list[Resource]:
-        """Return browseable static resources."""
+        """Return browseable static resources.
+
+        The nutanix:// resources are backed by Prism Central, so they are
+        hidden in PE-only mode to avoid advertising unusable entry points.
+        """
+        if settings.pe_only:
+            return []
         return STATIC_RESOURCES
 
     @server.list_resource_templates()
     async def list_resource_templates() -> list[ResourceTemplate]:
         """Return URI templates for parameterized resource access."""
+        if settings.pe_only:
+            return []
         return RESOURCE_TEMPLATES
 
     @server.read_resource()
     async def read_resource(uri: str) -> list[ReadResourceContents]:
         """Resolve a nutanix:// URI to resource contents."""
+        if settings.pe_only:
+            return [
+                ReadResourceContents(
+                    content=json.dumps(
+                        {
+                            "error": "nutanix:// resources are backed by Prism "
+                            "Central and are unavailable in PE-only mode "
+                            "(NUTANIX_PE_ONLY=true). Use pe_* tools instead."
+                        }
+                    ),
+                    mime_type="application/json",
+                )
+            ]
         try:
             return await resolve_resource(client, str(uri))
         except NutanixAPIError as e:
@@ -227,6 +256,8 @@ async def run_stdio() -> None:
         sys.exit(1)
 
     logger.info("Starting Nutanix MCP server (stdio) for %s:%s", settings.host, settings.port)
+    if settings.pe_only:
+        logger.info("PE-only mode active: Prism Central tools are hidden; only pe_* tools are exposed.")
 
     server, client = create_server(settings)
 

@@ -83,12 +83,19 @@ def _annotations_for(name: str) -> ToolAnnotations:
     )
 
 
-def get_all_tools() -> list[dict[str, Any]]:
-    """Return all registered tool definitions, enriched with MCP metadata."""
+def get_all_tools(pe_only: bool = False) -> list[dict[str, Any]]:
+    """Return all registered tool definitions, enriched with MCP metadata.
+
+    When ``pe_only`` is True, only Prism Element (``pe_*``) tools are returned.
+    This keeps the advertised tool surface honest on deployments that have no
+    Prism Central: the model never sees central-plane tools it cannot use.
+    """
     tools = (
         VM_TOOLS + CLUSTER_TOOLS + PE_TOOLS + NETWORKING_TOOLS + TASK_TOOLS
         + ALERT_TOOLS + CATEGORY_TOOLS + SNAPSHOT_TOOLS + ASBUILT_TOOLS
     )
+    if pe_only:
+        tools = [t for t in tools if t["name"].startswith("pe_")]
     seen: set[str] = set()
     enriched: list[dict[str, Any]] = []
     for tool in tools:

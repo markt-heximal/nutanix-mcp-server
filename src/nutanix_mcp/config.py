@@ -2,10 +2,10 @@
 
 import base64
 import sys
-from typing import Optional
+from typing import Annotated, Optional
 
 from pydantic import Field, SecretStr, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -33,13 +33,26 @@ class Settings(BaseSettings):
     )
     verify_ssl: bool = Field(default=True, description="Verify SSL certificates")
     timeout: int = Field(default=30, description="Request timeout in seconds")
+    pe_only: bool = Field(
+        default=False,
+        description=(
+            "PE-only mode. When true, only Prism Element (pe_*) tools are "
+            "exposed and Prism Central tools are hidden and blocked. Use this "
+            "when no Prism Central is deployed so the model never attempts "
+            "central-plane calls that would fail. Set NUTANIX_PE_ONLY=true."
+        ),
+    )
     log_level: str = Field(
         default="INFO",
         description="Log level for stderr diagnostics (DEBUG, INFO, WARNING, ERROR)",
     )
 
-    # Security: restrict which PE hosts can be targeted
-    allowed_pe_hosts: list[str] = Field(
+    # Security: restrict which PE hosts can be targeted.
+    # NoDecode prevents pydantic-settings from JSON-decoding the env value, so
+    # the mode="before" validator below can accept a comma-separated string
+    # (e.g. NUTANIX_ALLOWED_PE_HOSTS=10.0.1.242,10.0.2.242). A JSON array
+    # (["10.0.1.242"]) still works too.
+    allowed_pe_hosts: Annotated[list[str], NoDecode] = Field(
         default_factory=list,
         description=(
             "Allowlist of Prism Element hosts (IPs or hostnames). "
@@ -59,7 +72,19 @@ class Settings(BaseSettings):
     @classmethod
     def parse_pe_hosts(cls, v):
         if isinstance(v, str):
-            return [h.strip() for h in v.split(",") if h.strip()]
+            s = v.strip()
+            # Accept a JSON array (["a","b"]) or a comma-separated string (a,b).
+            # NoDecode on the field means we receive the raw string either way.
+            if s.startswith("["):
+                import json
+
+                try:
+                    parsed = json.loads(s)
+                    if isinstance(parsed, list):
+                        return [str(h).strip() for h in parsed if str(h).strip()]
+                except json.JSONDecodeError:
+                    pass
+            return [h.strip() for h in s.split(",") if h.strip()]
         return v or []
 
     @property
