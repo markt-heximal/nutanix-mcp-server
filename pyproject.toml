@@ -25,6 +25,7 @@ dependencies = [
     "python-dotenv>=1.0.0,<2.0",
     "uvicorn>=0.30.0",
     "starlette>=0.37.0",
+    "fastapi>=0.110.0",
     "ntnx-vmm-py-client>=4.0.0,<4.2",
     "ntnx-clustermgmt-py-client>=4.0.0,<4.2",
     "ntnx-networking-py-client>=4.0.0,<4.2",
