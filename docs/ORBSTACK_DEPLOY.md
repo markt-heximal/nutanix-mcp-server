@@ -69,28 +69,24 @@ curl -s $BASE/api/tools/list_clusters -X POST -H "Authorization: Bearer $TOKEN" 
 
 ## 3. Point the frontend at it
 
+This deployment is scoped to **same-Mac access**: `*.orb.local` resolves only on
+the Mac running OrbStack, so you use the Lovable app in a browser **on this Mac**.
+
 - In Lovable set `VITE_API_BASE_URL=https://nutanix-api.orb.local`.
-- Confirm `MGMT_CORS_ORIGINS` (in `.management.env`) matches the Lovable origin exactly.
+- Set `MGMT_CORS_ORIGINS` (in `.management.env`) to your Lovable app origin exactly
+  — e.g. `https://your-app.lovable.app` (the app's published/preview origin, **not**
+  the `orb.local` address). That's the page origin the browser sends; `orb.local`
+  is only where the API lives.
 - Log in with the user you created.
 
-> **Note on access scope.** `*.orb.local` resolves **only on the Mac running
-> OrbStack**. If you open the Lovable app in a browser on that same Mac, the
-> trusted-cert HTTPS domain works with zero extra setup. To use the app from a
-> phone or another machine, see "Remote access" below.
-
-## Remote access (other devices)
-
-The container also binds `127.0.0.1:9780` on the host, so front it with Tailscale
-on the Mac to reach it over your tailnet with TLS:
-
-```bash
-tailscale serve --bg --https=443 http://127.0.0.1:9780
-tailscale serve status        # shows the https://<host>.<tailnet>.ts.net URL
-```
-
-Then use that `*.ts.net` URL as `VITE_API_BASE_URL` and add it to
-`MGMT_CORS_ORIGINS`. (Anything reaching the API this way is still gated by
-login + JWT + RBAC.)
+> **Why it just works.** The Lovable page is served from a *public* origin but
+> calls the API on a *private* address (`orb.local`). Chrome guards that with a
+> Private Network Access preflight; the management API answers it
+> (`Access-Control-Allow-Private-Network: true`), and OrbStack's cert is already
+> trusted on this Mac — so there are no CORS, mixed-content, or cert warnings.
+>
+> Using the app from a **different device** (phone, another laptop) is out of
+> scope for this setup, since `orb.local` won't resolve there.
 
 ## Operations
 

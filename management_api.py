@@ -271,6 +271,13 @@ if _CORS_ORIGINS:
         allow_methods=["GET", "POST"],
         allow_headers=["Authorization", "Content-Type"],
         allow_credentials=False,
+        # Private Network Access: a page on a *public* origin (e.g.
+        # https://your-app.lovable.app) calling an API on a *private* address
+        # (e.g. https://nutanix-api.orb.local, which resolves to a local IP)
+        # triggers Chrome's PNA preflight. Answering it with
+        # Access-Control-Allow-Private-Network: true is what lets the real
+        # request through — essential for the same-Mac OrbStack setup.
+        allow_private_network=True,
     )
 
 

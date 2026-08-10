@@ -18,10 +18,10 @@
 # Then set MGMT_CORS_ORIGINS in .management.env to your Lovable origin, and point
 # the app's VITE_API_BASE_URL at https://${ORB_DOMAIN}.
 #
-# Reaching it from OTHER devices (phone, another laptop): *.orb.local only
-# resolves on the OrbStack host. Front it with Tailscale on the Mac instead:
-#   tailscale serve --bg --https=443 http://127.0.0.1:9780
-# (the api also binds 127.0.0.1:9780 below so `tailscale serve` and local curl work).
+# Access model: SAME-MAC. *.orb.local resolves only on the Mac running OrbStack,
+# so use the Lovable app in a browser on this Mac. The API enables Private
+# Network Access (public Lovable origin -> private orb.local address), so the
+# browser's PNA preflight succeeds automatically.
 
 name: nutanix-mgmt
 
@@ -44,7 +44,8 @@ services:
       dev.orbstack.domains: "${ORB_DOMAIN:-nutanix-api.orb.local}"
       # Be explicit about which container port the domain proxies to.
       dev.orbstack.http-port: "9780"
-    # Also bind loopback on the host so `tailscale serve` / local curl can reach it.
-    # OrbStack's domain proxy works regardless of this; it's only for remote access.
+    # Loopback bind for local curl / debugging only. OrbStack's domain proxy
+    # (https://${ORB_DOMAIN}) is the path the browser uses; this is not published
+    # beyond the Mac.
     ports:
       - "127.0.0.1:9780:9780"
