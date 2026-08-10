@@ -13,6 +13,20 @@ Lovable app (browser) ──HTTPS──▶ OrbStack reverse proxy ──▶ nuta
 Compose file: `deploy/docker-compose.orbstack.yml` (drops the Caddy proxy the
 generic `docker-compose.yml` uses).
 
+## Quick start (one command)
+
+On the mini, from the repo root:
+
+```bash
+./deploy/orbstack-up.sh
+```
+
+It creates any missing secrets (JWT secret, CORS origin, first admin user),
+builds the image, starts it behind OrbStack's HTTPS domain, and smoke-tests
+`/healthz`. The first run stops after creating `.env` so you can fill in your
+Nutanix credentials — edit it, then run the script again. The manual steps
+below are the same thing, broken out.
+
 ## 1. Secrets
 
 ```bash
