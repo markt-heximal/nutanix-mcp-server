@@ -107,8 +107,16 @@ def _tool_min_role(tool: dict[str, Any]) -> str:
     return "operator"
 
 
+# Load connection settings early so the tool catalogue can honour PE-only mode.
+settings = get_settings()
+
 # Build the catalogue once at import time so every request is a cheap lookup.
-_TOOLS_BY_NAME: dict[str, dict[str, Any]] = {t["name"]: t for t in get_all_tools()}
+# In PE-only deployments (no Prism Central), advertise ONLY the pe_* tools —
+# the Prism Central tools would 409 at call time, so hiding them keeps the UI's
+# catalogue (and every `allowed` flag) honest about what actually works here.
+_TOOLS_BY_NAME: dict[str, dict[str, Any]] = {
+    t["name"]: t for t in get_all_tools(pe_only=settings.pe_only)
+}
 _TOOL_MIN_ROLE: dict[str, str] = {n: _tool_min_role(t) for n, t in _TOOLS_BY_NAME.items()}
 _DESTRUCTIVE: set[str] = {
     n for n, t in _TOOLS_BY_NAME.items()
@@ -168,8 +176,6 @@ _USERS = _load_users()
 _CORS_ORIGINS = [
     o.strip() for o in os.environ.get("MGMT_CORS_ORIGINS", "").split(",") if o.strip()
 ]
-
-settings = get_settings()
 
 
 # ── Password hashing (stdlib, no extra dependency) ────────────────────────────
