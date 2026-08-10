@@ -1,0 +1,48 @@
+# Nutanix management API + TLS reverse proxy, for the AI factory mini (macOS
+# with Docker Desktop, or any Docker host).
+#
+#   1. cp deploy/.management.env.example .management.env   # fill in, chmod 600
+#      cp .env.example .env                                # NUTANIX_* connection
+#      python scripts/mgmt_user.py alice admin > /tmp/rec  # build users.json
+#      mkdir -p deploy/secrets && $EDITOR deploy/secrets/users.json
+#   2. Edit deploy/Caddyfile: set your hostname (or use the :443 tls internal form).
+#   3. docker compose -f deploy/docker-compose.yml up -d --build
+#
+# The API never binds a host port directly — only Caddy is published, so the
+# browser always reaches the API over HTTPS.
+
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.api
+    image: nutanix-mgmt-api
+    restart: unless-stopped
+    env_file:
+      - ../.env               # NUTANIX_HOST / USERNAME / PASSWORD / VERIFY_SSL / ...
+      - ../.management.env    # MGMT_JWT_SECRET / MGMT_CORS_ORIGINS / MGMT_TOKEN_TTL
+    environment:
+      # Point the app at the mounted users file (kept out of the image).
+      MGMT_USERS_FILE: /run/secrets/users.json
+    volumes:
+      - ./secrets/users.json:/run/secrets/users.json:ro
+    expose:
+      - "9780"
+    # No 'ports:' — the API is only reachable through the proxy on the compose net.
+
+  proxy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "443:443"
+      - "80:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

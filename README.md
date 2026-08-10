@@ -156,6 +156,33 @@ entities without explicit tool calls:
 | `set_credentials` | Interactive credential configuration (for clients without env var support) |
 | `nutanix_overview` | Guided environment overview — clusters, hosts, storage, alerts |
 
+## Web UI & HTTP backends
+
+Two optional HTTP layers let a browser frontend (e.g. a Lovable app) use this
+server without holding Nutanix credentials or speaking MCP:
+
+| Layer | File | Surface | Auth | Use it for |
+|-------|------|---------|------|-----------|
+| Read-only façade | `pe_facade.py` | `pe_list_*` GETs only | shared `X-API-Key` | monitoring dashboards |
+| Management API | `management_api.py` | **full** tool surface (read + write) | username/password → **JWT**, RBAC (viewer/operator/admin) | a management console that can create/power/delete VMs |
+
+The management API bridges the same handler registry the MCP server uses, so it
+never drifts out of sync. Destructive tools require an explicit `confirm`, and
+role is derived from each tool's MCP annotations.
+
+- Build the UI in Lovable: **`ui/`** (`LOVABLE_BUILD_SPEC.md`, `API_REFERENCE.md`,
+  `tool-catalog.json`, a TypeScript client in `ui/src/lib/`).
+- Deploy the backend on a mini/host: **`docs/MANAGEMENT_DEPLOY.md`** (Docker or
+  native macOS/launchd, TLS via Caddy).
+
+```bash
+pip install -e '.[api]'
+export MGMT_JWT_SECRET="$(openssl rand -hex 32)"
+export MGMT_CORS_ORIGINS="https://your-app.lovable.app"
+export MGMT_USERS_FILE=./users.json     # python scripts/mgmt_user.py alice admin
+uvicorn management_api:app --host 127.0.0.1 --port 9780
+```
+
 ## Setup
 
 ### Prerequisites

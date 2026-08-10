@@ -1,0 +1,24 @@
+# Image for the authenticated Nutanix management API (management_api.py).
+# Build context is the repo root:
+#   docker build -f deploy/Dockerfile.api -t nutanix-mgmt-api .
+FROM python:3.12-slim AS base
+
+WORKDIR /app
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+# Dependency layer (cached until pyproject/lock change). Install core + the
+# 'api' extra (PyJWT) needed by management_api.py.
+COPY pyproject.toml uv.lock* README.md LICENSE ./
+COPY src/ src/
+RUN uv sync --no-dev --extra api --frozen 2>/dev/null || uv sync --no-dev --extra api
+
+# App code
+COPY management_api.py ./
+COPY scripts/ scripts/
+
+EXPOSE 9780
+
+# Bind 0.0.0.0 inside the container; the TLS proxy in front is the public edge.
+# NUTANIX_* and MGMT_* come from the env_file / secrets, never baked into the image.
+ENTRYPOINT ["uv", "run", "uvicorn", "management_api:app", "--host", "0.0.0.0", "--port", "9780"]

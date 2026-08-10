@@ -1,0 +1,29 @@
+# Caddy TLS reverse proxy in front of the Nutanix management API.
+#
+# Option A — real domain with automatic Let's Encrypt certs (public DNS):
+#   mini.example.com {
+#       reverse_proxy api:9780
+#   }
+#
+# Option B — LAN / VPN address with a locally-trusted cert (no public DNS).
+#   Caddy mints its own CA; install Caddy's root cert on client machines, or
+#   accept the browser warning for a lab. Replace the address as needed.
+
+:443 {
+	tls internal
+	reverse_proxy api:9780
+
+	# Health check passthrough (unauthenticated by design).
+	@health path /healthz
+	handle @health {
+		reverse_proxy api:9780
+	}
+
+	# Basic hardening headers; the API also sets CORS for the app origin.
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+	}
+}

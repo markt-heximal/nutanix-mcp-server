@@ -34,6 +34,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Authenticated management API (management_api.py). fastapi/uvicorn are already
+# core dependencies; this group adds JWT session signing.
+api = [
+    "pyjwt>=2.8.0,<3.0",
+]
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
