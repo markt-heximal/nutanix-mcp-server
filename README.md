@@ -172,8 +172,10 @@ role is derived from each tool's MCP annotations.
 
 - Build the UI in Lovable: **`ui/`** (`LOVABLE_BUILD_SPEC.md`, `API_REFERENCE.md`,
   `tool-catalog.json`, a TypeScript client in `ui/src/lib/`).
-- Deploy the backend on a mini/host: **`docs/MANAGEMENT_DEPLOY.md`** (Docker or
-  native macOS/launchd, TLS via Caddy).
+- Deploy the backend on a mini/host:
+  - **OrbStack** (auto HTTPS, no proxy needed): **`docs/ORBSTACK_DEPLOY.md`** +
+    `deploy/docker-compose.orbstack.yml`
+  - Generic Docker (Caddy TLS) or native macOS/launchd: **`docs/MANAGEMENT_DEPLOY.md`**
 
 ```bash
 pip install -e '.[api]'
