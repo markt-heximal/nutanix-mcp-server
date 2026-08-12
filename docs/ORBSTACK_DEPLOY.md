@@ -35,6 +35,10 @@ cd ~/nutanix-mcp-server        # your checkout on the mini
 cp .env.example .env                            # Nutanix connection
 # fill in NUTANIX_HOST / NUTANIX_USERNAME / NUTANIX_PASSWORD / NUTANIX_VERIFY_SSL
 # (and NUTANIX_ALLOWED_PE_HOSTS if you want to pin PE targets)
+#
+# If the Prism Element admin password differs from Prism Central's, also set
+# NUTANIX_PE_USERNAME / NUTANIX_PE_PASSWORD — otherwise the pe_* tools (storage,
+# health, data protection) reuse the PC credentials and return HTTP 401.
 
 cp deploy/.management.env.example .management.env
 sed -i '' "s/replace-with-openssl-rand-hex-32/$(openssl rand -hex 32)/" .management.env
