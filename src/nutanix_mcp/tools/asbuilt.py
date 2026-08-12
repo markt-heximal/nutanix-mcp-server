@@ -383,7 +383,8 @@ def _extract_subnet_info(network: dict) -> str:
 async def _collect_storage(client: NutanixClient, pe_host: str) -> dict[str, Any]:
     """Collect storage configuration."""
     containers_result = await client.pe_list(pe_host, "containers")
-    pools_result = await client.pe_list(pe_host, "storage_pools")
+    # Storage pools live only on the v1 API; v2.0 returns 404 for this resource.
+    pools_result = await client.pe_v1_get(pe_host, "storage_pools")
     disks_result = await client.pe_list(pe_host, "disks")
 
     containers = containers_result.get("entities", [])
@@ -406,7 +407,7 @@ async def _collect_storage(client: NutanixClient, pe_host: str) -> dict[str, Any
         "pools": [
             {
                 "name": sp.get("name", ""),
-                "uuid": sp.get("storage_pool_uuid", ""),
+                "uuid": sp.get("storagePoolUuid") or sp.get("storage_pool_uuid", ""),
                 "capacityTb": round((sp.get("capacity", 0) or 0) / (1024**4), 2),
                 "numDisks": len(sp.get("disks", [])),
             }

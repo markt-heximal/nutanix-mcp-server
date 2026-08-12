@@ -689,19 +689,29 @@ async def handle_pe_list_containers(client: NutanixClient, arguments: dict[str, 
 
 
 async def handle_pe_list_storage_pools(client: NutanixClient, arguments: dict[str, Any]) -> dict[str, Any]:
-    """List storage pools from Prism Element v2 API."""
+    """List storage pools from Prism Element.
+
+    Storage pools are only exposed on the PE v1 API
+    (``/api/nutanix/v1/storage_pools``); the v2.0 API returns 404 for this
+    resource. The v1 payload uses camelCase keys (``storagePoolUuid``,
+    ``usageStats``); we fall back to the v2 snake_case names for safety.
+    """
     pe_host = arguments["pe_host"]
-    result = await client.pe_list(pe_host, "storage_pools")
+    result = await client.pe_v1_get(pe_host, "storage_pools")
     entities = result.get("entities", [])
+
+    def _usage_bytes(sp: dict) -> Any:
+        stats = sp.get("usageStats") or sp.get("usage_stats") or {}
+        return stats.get("storage.usage_bytes")
 
     return {
         "count": len(entities),
         "storagePools": [
             {
                 "name": sp.get("name"),
-                "uuid": sp.get("storage_pool_uuid"),
+                "uuid": sp.get("storagePoolUuid") or sp.get("storage_pool_uuid"),
                 "capacityBytes": sp.get("capacity"),
-                "usageBytes": sp.get("usage_stats", {}).get("storage.usage_bytes"),
+                "usageBytes": _usage_bytes(sp),
                 "numDisks": len(sp.get("disks", [])),
             }
             for sp in entities

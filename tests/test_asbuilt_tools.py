@@ -141,11 +141,12 @@ CONTAINERS_RESPONSE = {
     ]
 }
 
+# v1 API payload — camelCase keys (storagePoolUuid), unlike the v2 containers.
 POOLS_RESPONSE = {
     "entities": [
         {
             "name": "default-pool",
-            "storage_pool_uuid": "sp-uuid-1",
+            "storagePoolUuid": "sp-uuid-1",
             "capacity": 10995116277760,
             "disks": ["d1", "d2", "d3", "d4"],
         },
@@ -237,7 +238,6 @@ def _setup_pe_mocks(client: AsyncMock):
             "vms": VMS_RESPONSE,
             "networks": NETWORKS_RESPONSE,
             "containers": CONTAINERS_RESPONSE,
-            "storage_pools": POOLS_RESPONSE,
             "disks": DISKS_RESPONSE,
             "protection_domains": PD_RESPONSE,
             "remote_sites": {"entities": []},
@@ -245,8 +245,16 @@ def _setup_pe_mocks(client: AsyncMock):
         }
         return responses.get(resource, {"entities": []})
 
+    async def mock_pe_v1_get(pe_host, path, params=None):
+        # Storage pools are only on the v1 API.
+        responses = {
+            "storage_pools": POOLS_RESPONSE,
+        }
+        return responses.get(path, {"entities": []})
+
     client.pe_get = AsyncMock(side_effect=mock_pe_get)
     client.pe_list = AsyncMock(side_effect=mock_pe_list)
+    client.pe_v1_get = AsyncMock(side_effect=mock_pe_v1_get)
 
 
 # ─── generate_asbuilt tests ──────────────────────────────────────────────────
