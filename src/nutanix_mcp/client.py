@@ -342,7 +342,7 @@ class NutanixClient:
             self._pe_clients[pe_host] = httpx.AsyncClient(
                 base_url=f"https://{pe_host}:{self.settings.port}/api/nutanix/{self.V2_VERSION}",
                 headers={
-                    **self.settings.get_auth_header(),
+                    **self.settings.get_pe_auth_header(),
                     "Content-Type": "application/json",
                     "Accept": "application/json",
                 },
@@ -391,7 +391,7 @@ class NutanixClient:
             self._pe_clients[cache_key] = httpx.AsyncClient(
                 base_url=f"https://{pe_host}:{self.settings.port}/api/nutanix/v1",
                 headers={
-                    **self.settings.get_auth_header(),
+                    **self.settings.get_pe_auth_header(),
                     "Content-Type": "application/json",
                     "Accept": "application/json",
                 },

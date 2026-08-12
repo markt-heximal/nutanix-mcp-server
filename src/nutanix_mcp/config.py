@@ -31,6 +31,22 @@ class Settings(BaseSettings):
         default=None,
         description="Password for basic auth (SecretStr — masked in repr/logs)",
     )
+    pe_username: Optional[str] = Field(
+        default=None,
+        description=(
+            "Optional Prism Element username. Set NUTANIX_PE_USERNAME when the "
+            "PE admin credentials differ from Prism Central's. Falls back to "
+            "NUTANIX_USERNAME when unset."
+        ),
+    )
+    pe_password: Optional[SecretStr] = Field(
+        default=None,
+        description=(
+            "Optional Prism Element password (SecretStr). Set NUTANIX_PE_PASSWORD "
+            "when the PE admin credentials differ from Prism Central's. Falls back "
+            "to NUTANIX_PASSWORD when unset."
+        ),
+    )
     verify_ssl: bool = Field(default=True, description="Verify SSL certificates")
     timeout: int = Field(default=30, description="Request timeout in seconds")
     pe_only: bool = Field(
@@ -98,12 +114,30 @@ class Settings(BaseSettings):
         return bool(self.username and self.password)
 
     def get_auth_header(self) -> dict[str, str]:
-        """Build the authorization header."""
+        """Build the authorization header for Prism Central."""
         if self.username and self.password:
             secret = self.password.get_secret_value()
             credentials = base64.b64encode(f"{self.username}:{secret}".encode()).decode()
             return {"Authorization": f"Basic {credentials}"}
         raise ValueError("No credentials configured. Set NUTANIX_USERNAME and NUTANIX_PASSWORD.")
+
+    def get_pe_auth_header(self) -> dict[str, str]:
+        """Build the authorization header for Prism Element.
+
+        Uses NUTANIX_PE_USERNAME / NUTANIX_PE_PASSWORD when set (PE admin
+        credentials often differ from Prism Central's), otherwise falls back to
+        the Prism Central credentials.
+        """
+        pe_user = self.pe_username or self.username
+        pe_secret = self.pe_password or self.password
+        if pe_user and pe_secret:
+            secret = pe_secret.get_secret_value()
+            credentials = base64.b64encode(f"{pe_user}:{secret}".encode()).decode()
+            return {"Authorization": f"Basic {credentials}"}
+        raise ValueError(
+            "No PE credentials configured. Set NUTANIX_PE_USERNAME/NUTANIX_PE_PASSWORD "
+            "or NUTANIX_USERNAME/NUTANIX_PASSWORD."
+        )
 
     def is_pe_host_allowed(self, pe_host: str) -> bool:
         """Check if a PE host is in the allowlist.
