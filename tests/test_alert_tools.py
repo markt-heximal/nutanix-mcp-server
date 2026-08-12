@@ -105,7 +105,7 @@ async def test_acknowledge_alert(mock_client):
         {"data": {"extId": "alert-uuid-123"}},
         "etag-value-1",
     )
-    mock_client.v4_put.return_value = {"data": {"extId": "alert-uuid-123"}}
+    mock_client.v4_post.return_value = {"data": {"extId": "alert-uuid-123"}}
 
     result = await handle_acknowledge_alert(
         mock_client,
@@ -118,10 +118,11 @@ async def test_acknowledge_alert(mock_client):
     assert result["status"] == "alert_acknowledged"
     assert result["alert_uuid"] == "alert-uuid-123"
 
-    # Verify PUT was called with ETag
-    put_call = mock_client.v4_put.call_args
-    assert put_call.kwargs["headers"]["If-Match"] == "etag-value-1"
-    assert put_call.kwargs["body"] == {"isAcknowledged": True}
+    # Verify POST hit the acknowledge $action endpoint with the ETag
+    post_call = mock_client.v4_post.call_args
+    assert post_call.kwargs["namespace"] == "monitoring"
+    assert post_call.kwargs["path"] == "serviceability/alerts/alert-uuid-123/$actions/acknowledge"
+    assert post_call.kwargs["headers"]["If-Match"] == "etag-value-1"
 
 
 @pytest.mark.asyncio
@@ -136,7 +137,7 @@ async def test_resolve_alert(mock_client):
         },
         None,
     )
-    mock_client.v4_put.return_value = {"data": {"extId": "alert-uuid-456"}}
+    mock_client.v4_post.return_value = {"data": {"extId": "alert-uuid-456"}}
 
     result = await handle_acknowledge_alert(
         mock_client,
@@ -147,6 +148,6 @@ async def test_resolve_alert(mock_client):
     )
 
     assert result["status"] == "alert_resolved"
-    put_call = mock_client.v4_put.call_args
-    assert put_call.kwargs["body"] == {"isResolved": True}
-    assert put_call.kwargs["headers"]["If-Match"] == "etag-2"
+    post_call = mock_client.v4_post.call_args
+    assert post_call.kwargs["path"] == "serviceability/alerts/alert-uuid-456/$actions/resolve"
+    assert post_call.kwargs["headers"]["If-Match"] == "etag-2"

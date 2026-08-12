@@ -174,6 +174,17 @@ class NutanixClient:
         response = await self._v4_request("PUT", namespace, path, body=body, headers=headers)
         return response.json()
 
+    async def v4_post(
+        self,
+        namespace: str,
+        path: str,
+        body: Optional[dict[str, Any]] = None,
+        headers: Optional[dict[str, str]] = None,
+    ) -> dict[str, Any]:
+        """POST request against v4 API (used for $actions endpoints)."""
+        response = await self._v4_request("POST", namespace, path, body=body, headers=headers)
+        return response.json()
+
     # Maximum allowed length for OData filter/orderby expressions
     MAX_FILTER_LENGTH = 500
 
