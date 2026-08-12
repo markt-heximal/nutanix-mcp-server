@@ -5,37 +5,103 @@ from typing import Any, Optional
 from nutanix_mcp.client import NutanixClient
 
 
+def _dedupe(items: list[str]) -> list[str]:
+    """De-duplicate a list of strings while preserving order."""
+    seen: set[str] = set()
+    return [x for x in items if not (x in seen or seen.add(x))]
+
+
+def _nic_ip_addresses(nic: Any) -> list[str]:
+    """Collect a single NIC's IPv4 addresses (statically assigned + learned)."""
+    ips: list[str] = []
+    net = getattr(nic, "network_info", None)
+    if not net:
+        return ips
+    # Statically-assigned addresses (ipv4_config)
+    cfg = getattr(net, "ipv4_config", None)
+    if cfg:
+        ip = getattr(cfg, "ip_address", None)
+        if ip and getattr(ip, "value", None):
+            ips.append(ip.value)
+        for sec in getattr(cfg, "secondary_ip_address_list", None) or []:
+            if getattr(sec, "value", None):
+                ips.append(sec.value)
+    # Learned/discovered addresses (ipv4_info)
+    info = getattr(net, "ipv4_info", None)
+    if info:
+        for learned in getattr(info, "learned_ip_addresses", None) or []:
+            if getattr(learned, "value", None):
+                ips.append(learned.value)
+    return _dedupe(ips)
+
+
 def _vm_ip_addresses(vm: Any) -> list[str]:
-    """Collect a VM's IPv4 addresses from its NICs (statically assigned + learned)."""
+    """Collect a VM's IPv4 addresses across all NICs."""
     ips: list[str] = []
     for nic in getattr(vm, "nics", None) or []:
-        net = getattr(nic, "network_info", None)
-        if not net:
-            continue
-        # Statically-assigned addresses (ipv4_config)
-        cfg = getattr(net, "ipv4_config", None)
-        if cfg:
-            ip = getattr(cfg, "ip_address", None)
-            if ip and getattr(ip, "value", None):
-                ips.append(ip.value)
-            for sec in getattr(cfg, "secondary_ip_address_list", None) or []:
-                if getattr(sec, "value", None):
-                    ips.append(sec.value)
-        # Learned/discovered addresses (ipv4_info)
-        info = getattr(net, "ipv4_info", None)
-        if info:
-            for learned in getattr(info, "learned_ip_addresses", None) or []:
-                if getattr(learned, "value", None):
-                    ips.append(learned.value)
-    # De-duplicate while preserving order.
-    seen: set[str] = set()
-    return [ip for ip in ips if not (ip in seen or seen.add(ip))]
+        ips.extend(_nic_ip_addresses(nic))
+    return _dedupe(ips)
 
 
 def _vm_host(vm: Any) -> Optional[str]:
     """Return the ext_id of the host a VM is running on, if scheduled."""
     host = getattr(vm, "host", None)
     return getattr(host, "ext_id", None) if host else None
+
+
+def _vm_disks(vm: Any) -> list[dict]:
+    """Summarize a VM's disks with human-friendly sizes."""
+    disks: list[dict] = []
+    for idx, disk in enumerate(getattr(vm, "disks", None) or [], start=1):
+        size = None
+        backing = getattr(disk, "backing_info", None)
+        if backing is not None:
+            size = getattr(backing, "disk_size_bytes", None)
+        if size is None:
+            size = getattr(disk, "disk_size_bytes", None)
+        disks.append(
+            {
+                "label": f"Disk {idx}",
+                "extId": getattr(disk, "ext_id", None),
+                "sizeBytes": size,
+                "sizeGib": round(size / (1024**3), 1) if size else None,
+            }
+        )
+    return disks
+
+
+def _vm_nics(vm: Any) -> list[dict]:
+    """Summarize a VM's NICs with MAC and IP addresses."""
+    nics: list[dict] = []
+    for idx, nic in enumerate(getattr(vm, "nics", None) or [], start=1):
+        backing = getattr(nic, "backing_info", None)
+        nics.append(
+            {
+                "label": f"NIC {idx}",
+                "macAddress": getattr(backing, "mac_address", None) if backing else None,
+                "isConnected": getattr(backing, "is_connected", None) if backing else None,
+                "ipAddresses": _nic_ip_addresses(nic),
+            }
+        )
+    return nics
+
+
+def _vm_summary(vm: Any) -> dict[str, Any]:
+    """Build a flat, UI-friendly summary from a raw v4 VM object."""
+    cluster = getattr(vm, "cluster", None)
+    return {
+        "name": vm.name,
+        "extId": vm.ext_id,
+        "description": getattr(vm, "description", None),
+        "powerState": vm.power_state,
+        "numVcpus": (getattr(vm, "num_sockets", 0) or 0) * (getattr(vm, "num_cores_per_socket", 0) or 0),
+        "memorySizeMb": (getattr(vm, "memory_size_bytes", 0) or 0) // (1024 * 1024),
+        "clusterUuid": cluster.ext_id if cluster else None,
+        "host": _vm_host(vm),
+        "ipAddresses": _vm_ip_addresses(vm),
+        "disks": _vm_disks(vm),
+        "nics": _vm_nics(vm),
+    }
 
 # ─── Tool Definitions ─────────────────────────────────────────────────────────
 
@@ -298,12 +364,21 @@ async def handle_list_vms(client: NutanixClient, arguments: dict[str, Any]) -> d
 
 
 async def handle_get_vm(client: NutanixClient, arguments: dict[str, Any]) -> dict[str, Any]:
-    """Get VM details using official Nutanix SDK."""
+    """Get VM details using official Nutanix SDK.
+
+    Returns the raw v4 VM object plus a flat ``summary`` block with
+    UI-friendly fields (cluster, host, IP addresses, disk sizes, NIC IPs)
+    so callers don't have to navigate the deeply-nested v4 structure.
+    """
     vm_uuid = arguments["vm_uuid"]
     sdk = client.sdk
     response = await sdk.call(sdk.vm_api.get_vm_by_id, vm_uuid)
     vm = response.data
-    return vm.to_dict() if vm else {}
+    if not vm:
+        return {}
+    result = vm.to_dict()
+    result["summary"] = _vm_summary(vm)
+    return result
 
 
 async def handle_power_on_vm(client: NutanixClient, arguments: dict[str, Any]) -> dict[str, Any]:
