@@ -110,11 +110,15 @@ the Mac running OrbStack, so you use the Lovable app in a browser **on this Mac*
 
 ```bash
 docker compose -f deploy/docker-compose.orbstack.yml logs -f api
-docker compose -f deploy/docker-compose.orbstack.yml up -d --build   # after code changes
-docker compose -f deploy/docker-compose.orbstack.yml restart api     # after editing .env / users.json
-docker compose -f deploy/docker-compose.orbstack.yml down            # stop
+docker compose -f deploy/docker-compose.orbstack.yml up -d --build             # after code changes
+docker compose -f deploy/docker-compose.orbstack.yml up -d --force-recreate api # after editing .env / .management.env
+docker compose -f deploy/docker-compose.orbstack.yml restart api               # after editing users.json
+docker compose -f deploy/docker-compose.orbstack.yml down                      # stop
 ```
 
-Editing `.env` or `.management.env` requires a `restart`; changing
-`deploy/secrets/users.json` also requires a `restart` (it's read at startup).
-Rotating `MGMT_JWT_SECRET` logs everyone out.
+Editing `.env` or `.management.env` requires **recreating** the container
+(`up -d --force-recreate api`) — a plain `restart` re-uses the environment the
+container was created with and will **not** pick up `env_file` changes. Changing
+`deploy/secrets/users.json` only needs a `restart` (it's a mounted file read at
+startup, not baked into the environment). Rotating `MGMT_JWT_SECRET` logs
+everyone out.
