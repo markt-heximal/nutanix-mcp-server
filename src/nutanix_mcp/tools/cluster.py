@@ -190,7 +190,7 @@ async def handle_list_hosts(client: NutanixClient, arguments: dict[str, Any]) ->
             "numCpuSockets": h.number_of_cpu_sockets,
             "numCpuCores": h.number_of_cpu_cores,
             "memorySizeBytes": h.memory_size_bytes,
-            "cluster": cluster_ref.ext_id if cluster_ref else None,
+            "cluster": cluster_ref.uuid if cluster_ref else None,
             "clusterName": cluster_ref.name if cluster_ref else None,
         }
 

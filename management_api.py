@@ -335,8 +335,13 @@ async def me(identity: Identity = Depends(require_identity)) -> dict[str, str]:
 @app.get("/api/config")
 async def config(identity: Identity = Depends(require_identity)) -> dict[str, Any]:
     """UI bootstrap: default PE host, allowlist, and role ranking."""
+    # For pe_* tools the default host must be a real Prism Element, not the
+    # Prism Central address in NUTANIX_HOST. Prefer the first allowlisted PE.
+    default_pe_host = (
+        settings.allowed_pe_hosts[0] if settings.allowed_pe_hosts else settings.host
+    )
     return {
-        "default_pe_host": settings.host,
+        "default_pe_host": default_pe_host,
         "allowed_pe_hosts": settings.allowed_pe_hosts,
         "pe_only": settings.pe_only,
         "roles": ROLE_RANK,

@@ -230,8 +230,9 @@ async def handle_list_vms(client: NutanixClient, arguments: dict[str, Any]) -> d
             }
 
     if limit and not cluster_name:
-        # Single page with limit (skip when cluster filtering since we need all VMs)
-        response = await sdk.call(sdk.vm_api.list_vms, _limit=limit, **kwargs)
+        # Single page with limit (skip when cluster filtering since we need all VMs).
+        # PC v4 caps the VMs page size at 100; clamp so larger UI values don't 400.
+        response = await sdk.call(sdk.vm_api.list_vms, _limit=min(limit, 100), **kwargs)
         vms = response.data or []
     else:
         # Auto-paginate all results
@@ -239,7 +240,7 @@ async def handle_list_vms(client: NutanixClient, arguments: dict[str, Any]) -> d
 
     # Client-side cluster filtering
     if cluster_uuid:
-        vms = [vm for vm in vms if vm.cluster and vm.cluster.ext_id == cluster_uuid]
+        vms = [vm for vm in vms if vm.cluster and vm.cluster.uuid == cluster_uuid]
         if limit:
             vms = vms[:limit]
 
@@ -254,7 +255,7 @@ async def handle_list_vms(client: NutanixClient, arguments: dict[str, Any]) -> d
                 "powerState": vm.power_state,
                 "numVcpus": (vm.num_sockets or 0) * (vm.num_cores_per_socket or 0),
                 "memorySizeMb": (vm.memory_size_bytes or 0) // (1024 * 1024),
-                "cluster": vm.cluster.ext_id if vm.cluster else None,
+                "cluster": vm.cluster.uuid if vm.cluster else None,
             }
             for vm in vms
         ],
@@ -312,7 +313,7 @@ async def handle_create_vm(client: NutanixClient, arguments: dict[str, Any]) -> 
     disk_size_gb = arguments.get("disk_size_gb", 40)
 
     cluster_ref = VmModule.ClusterReference()
-    cluster_ref.ext_id = cluster_uuid
+    cluster_ref.uuid = cluster_uuid
 
     disk = DiskModule.Disk()
     disk.disk_size_bytes = disk_size_gb * 1024 * 1024 * 1024
