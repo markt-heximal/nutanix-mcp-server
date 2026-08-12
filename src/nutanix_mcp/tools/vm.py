@@ -1,8 +1,41 @@
 """VM management tools using Nutanix v4 vmm namespace."""
 
-from typing import Any
+from typing import Any, Optional
 
 from nutanix_mcp.client import NutanixClient
+
+
+def _vm_ip_addresses(vm: Any) -> list[str]:
+    """Collect a VM's IPv4 addresses from its NICs (statically assigned + learned)."""
+    ips: list[str] = []
+    for nic in getattr(vm, "nics", None) or []:
+        net = getattr(nic, "network_info", None)
+        if not net:
+            continue
+        # Statically-assigned addresses (ipv4_config)
+        cfg = getattr(net, "ipv4_config", None)
+        if cfg:
+            ip = getattr(cfg, "ip_address", None)
+            if ip and getattr(ip, "value", None):
+                ips.append(ip.value)
+            for sec in getattr(cfg, "secondary_ip_address_list", None) or []:
+                if getattr(sec, "value", None):
+                    ips.append(sec.value)
+        # Learned/discovered addresses (ipv4_info)
+        info = getattr(net, "ipv4_info", None)
+        if info:
+            for learned in getattr(info, "learned_ip_addresses", None) or []:
+                if getattr(learned, "value", None):
+                    ips.append(learned.value)
+    # De-duplicate while preserving order.
+    seen: set[str] = set()
+    return [ip for ip in ips if not (ip in seen or seen.add(ip))]
+
+
+def _vm_host(vm: Any) -> Optional[str]:
+    """Return the ext_id of the host a VM is running on, if scheduled."""
+    host = getattr(vm, "host", None)
+    return getattr(host, "ext_id", None) if host else None
 
 # ─── Tool Definitions ─────────────────────────────────────────────────────────
 
@@ -256,6 +289,8 @@ async def handle_list_vms(client: NutanixClient, arguments: dict[str, Any]) -> d
                 "numVcpus": (vm.num_sockets or 0) * (vm.num_cores_per_socket or 0),
                 "memorySizeMb": (vm.memory_size_bytes or 0) // (1024 * 1024),
                 "cluster": vm.cluster.ext_id if vm.cluster else None,
+                "host": _vm_host(vm),
+                "ipAddresses": _vm_ip_addresses(vm),
             }
             for vm in vms
         ],
