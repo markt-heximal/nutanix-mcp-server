@@ -130,13 +130,13 @@ CONTAINERS_RESPONSE = {
     "entities": [
         {
             "name": "default-container",
-            "container_uuid": "ctr-uuid-1",
+            "storage_container_uuid": "ctr-uuid-1",
             "storage_pool_uuid": "sp-uuid-1",
             "max_capacity": 10995116277760,
             "replication_factor": 2,
             "compression_enabled": True,
             "on_disk_dedup": False,
-            "erasure_coded": False,
+            "erasure_code": "off",
         },
     ]
 }
@@ -237,7 +237,7 @@ def _setup_pe_mocks(client: AsyncMock):
             "hosts": HOSTS_RESPONSE,
             "vms": VMS_RESPONSE,
             "networks": NETWORKS_RESPONSE,
-            "containers": CONTAINERS_RESPONSE,
+            "storage_containers": CONTAINERS_RESPONSE,
             "disks": DISKS_RESPONSE,
             "protection_domains": PD_RESPONSE,
             "remote_sites": {"entities": []},

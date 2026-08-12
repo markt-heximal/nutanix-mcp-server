@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from nutanix_mcp.client import NutanixClient
+from nutanix_mcp.tools.prism_element import _container_erasure_coded
 
 # ─── Available report sections ────────────────────────────────────────────────
 
@@ -382,7 +383,8 @@ def _extract_subnet_info(network: dict) -> str:
 
 async def _collect_storage(client: NutanixClient, pe_host: str) -> dict[str, Any]:
     """Collect storage configuration."""
-    containers_result = await client.pe_list(pe_host, "containers")
+    # v2 resource is 'storage_containers'; 'containers' returns 404.
+    containers_result = await client.pe_list(pe_host, "storage_containers")
     # Storage pools live only on the v1 API; v2.0 returns 404 for this resource.
     pools_result = await client.pe_v1_get(pe_host, "storage_pools")
     disks_result = await client.pe_list(pe_host, "disks")
@@ -395,12 +397,12 @@ async def _collect_storage(client: NutanixClient, pe_host: str) -> dict[str, Any
         "containers": [
             {
                 "name": c.get("name", ""),
-                "uuid": c.get("container_uuid", ""),
+                "uuid": c.get("storage_container_uuid") or c.get("container_uuid", ""),
                 "maxCapacityTb": round((c.get("max_capacity", 0) or 0) / (1024**4), 2),
                 "replicationFactor": c.get("replication_factor", ""),
                 "compressionEnabled": c.get("compression_enabled", False),
                 "dedupEnabled": c.get("on_disk_dedup"),
-                "erasureCoded": c.get("erasure_coded", False),
+                "erasureCoded": _container_erasure_coded(c),
             }
             for c in containers
         ],
