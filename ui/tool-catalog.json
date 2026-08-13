@@ -1,0 +1,1483 @@
+{
+  "tools": [
+    {
+      "name": "list_vms",
+      "title": "List VMs",
+      "description": "List ALL virtual machines on Nutanix (auto-paginates internally). Returns complete results in one call \u2014 no manual pagination needed. Use 'cluster_name' to filter VMs to a specific cluster by name. Use 'filter' to narrow results via OData. Use 'limit' only if you want a subset.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cluster_name": {
+            "type": "string",
+            "description": "Filter VMs to a specific cluster by name (client-side filtering)."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData filter expression. Examples: \"name eq 'my-vm'\", \"powerState eq 'ON'\""
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Optional cap on results. Omit to get ALL VMs (default behavior)."
+          }
+        }
+      }
+    },
+    {
+      "name": "get_vm",
+      "title": "Get VM",
+      "description": "Get detailed information about a specific VM by its UUID. Returns full configuration including CPU, memory, disks, and NICs.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "vm_uuid": {
+            "type": "string",
+            "description": "The UUID (extId) of the virtual machine"
+          }
+        },
+        "required": [
+          "vm_uuid"
+        ]
+      }
+    },
+    {
+      "name": "power_on_vm",
+      "title": "Power On VM",
+      "description": "Power on a virtual machine.",
+      "min_role": "operator",
+      "destructive": false,
+      "read_only": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "vm_uuid": {
+            "type": "string",
+            "description": "The UUID (extId) of the virtual machine"
+          }
+        },
+        "required": [
+          "vm_uuid"
+        ]
+      }
+    },
+    {
+      "name": "power_off_vm",
+      "title": "Power Off VM",
+      "description": "Power off a virtual machine. Uses ACPI shutdown by default (guest-initiated).",
+      "min_role": "admin",
+      "destructive": true,
+      "read_only": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "vm_uuid": {
+            "type": "string",
+            "description": "The UUID (extId) of the virtual machine"
+          },
+          "force": {
+            "type": "boolean",
+            "description": "Force power off (hard shutdown) instead of ACPI guest shutdown",
+            "default": false
+          }
+        },
+        "required": [
+          "vm_uuid"
+        ]
+      }
+    },
+    {
+      "name": "create_vm",
+      "title": "Create VM",
+      "description": "Create a new virtual machine. Requires name, cluster UUID, and basic specs.",
+      "min_role": "operator",
+      "destructive": false,
+      "read_only": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name for the new VM"
+          },
+          "cluster_uuid": {
+            "type": "string",
+            "description": "UUID of the cluster to create the VM on"
+          },
+          "num_vcpus": {
+            "type": "integer",
+            "description": "Number of vCPUs (default: 2)",
+            "default": 2
+          },
+          "memory_mb": {
+            "type": "integer",
+            "description": "Memory in MB (default: 4096)",
+            "default": 4096
+          },
+          "disk_size_gb": {
+            "type": "integer",
+            "description": "Boot disk size in GB (default: 40)",
+            "default": 40
+          }
+        },
+        "required": [
+          "name",
+          "cluster_uuid"
+        ]
+      }
+    },
+    {
+      "name": "update_vm",
+      "title": "Update VM",
+      "description": "Update a virtual machine's configuration (CPU, memory, name, description). The VM should be powered off for CPU/memory changes. Uses ETag-based concurrency control. Returns a task UUID for status tracking.",
+      "min_role": "admin",
+      "destructive": true,
+      "read_only": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "vm_uuid": {
+            "type": "string",
+            "description": "The UUID (extId) of the virtual machine to update"
+          },
+          "name": {
+            "type": "string",
+            "description": "New name for the VM (optional)"
+          },
+          "description": {
+            "type": "string",
+            "description": "New description for the VM (optional)"
+          },
+          "num_vcpus": {
+            "type": "integer",
+            "description": "New total number of vCPUs (optional, VM must be off)"
+          },
+          "memory_mb": {
+            "type": "integer",
+            "description": "New memory in MB (optional, VM must be off)"
+          }
+        },
+        "required": [
+          "vm_uuid"
+        ]
+      }
+    },
+    {
+      "name": "delete_vm",
+      "title": "Delete VM",
+      "description": "Delete a virtual machine permanently. This action cannot be undone. Requires explicit confirmation. Returns a task UUID for status tracking.",
+      "min_role": "admin",
+      "destructive": true,
+      "read_only": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "vm_uuid": {
+            "type": "string",
+            "description": "The UUID (extId) of the virtual machine to delete"
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "Must be true to confirm deletion. Safety guard against accidental deletes."
+          }
+        },
+        "required": [
+          "vm_uuid",
+          "confirm"
+        ]
+      }
+    },
+    {
+      "name": "clone_vm",
+      "title": "Clone VM",
+      "description": "Clone an existing virtual machine. Creates a copy with a new name. Returns a task UUID for status tracking.",
+      "min_role": "operator",
+      "destructive": false,
+      "read_only": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "vm_uuid": {
+            "type": "string",
+            "description": "The UUID (extId) of the source VM to clone"
+          },
+          "new_name": {
+            "type": "string",
+            "description": "Name for the cloned VM"
+          }
+        },
+        "required": [
+          "vm_uuid",
+          "new_name"
+        ]
+      }
+    },
+    {
+      "name": "list_clusters",
+      "title": "List Clusters",
+      "description": "List ALL Nutanix clusters registered with Prism Central (auto-paginates internally). Returns complete results in one call \u2014 no manual pagination needed.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData filter expression. Example: \"name eq 'prod-cluster'\""
+          }
+        }
+      }
+    },
+    {
+      "name": "get_cluster",
+      "title": "Get Cluster",
+      "description": "Get detailed information about a specific cluster by UUID. Returns configuration, network, storage, and health details.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cluster_uuid": {
+            "type": "string",
+            "description": "The UUID (extId) of the cluster"
+          }
+        },
+        "required": [
+          "cluster_uuid"
+        ]
+      }
+    },
+    {
+      "name": "list_hosts",
+      "title": "List Hosts",
+      "description": "List ALL hypervisor hosts (auto-paginates internally). Returns complete results in one call \u2014 no manual pagination needed. Optionally filter by cluster UUID.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cluster_uuid": {
+            "type": "string",
+            "description": "Filter hosts to a specific cluster UUID"
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData filter expression"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Optional cap on results. Omit to get ALL hosts (default behavior)."
+          }
+        }
+      }
+    },
+    {
+      "name": "get_host",
+      "title": "Get Host",
+      "description": "Get detailed information about a specific host by UUID. Returns hardware specs, hypervisor info, and resource usage.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "host_uuid": {
+            "type": "string",
+            "description": "The UUID (extId) of the host"
+          }
+        },
+        "required": [
+          "host_uuid"
+        ]
+      }
+    },
+    {
+      "name": "list_storage_containers",
+      "title": "List Storage Containers",
+      "description": "List ALL storage containers (auto-paginates internally). Returns complete results in one call \u2014 no manual pagination needed.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cluster_uuid": {
+            "type": "string",
+            "description": "Filter to a specific cluster UUID"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Optional cap on results. Omit to get ALL containers (default behavior)."
+          }
+        }
+      }
+    },
+    {
+      "name": "pe_get_cluster_info",
+      "title": "PE: Get Cluster Info",
+      "description": "Get cluster info directly from a Prism Element node. Returns AOS version, cluster name, storage capacity, and health.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pe_host": {
+            "type": "string",
+            "description": "Prism Element CVM IP address or hostname"
+          }
+        },
+        "required": [
+          "pe_host"
+        ]
+      }
+    },
+    {
+      "name": "pe_list_vms",
+      "title": "PE: List VMs",
+      "description": "List VMs on a specific Prism Element cluster. Returns VM names, UUIDs, power states, and resource allocation.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pe_host": {
+            "type": "string",
+            "description": "Prism Element CVM IP address or hostname"
+          },
+          "count": {
+            "type": "integer",
+            "description": "Maximum number of VMs to return"
+          }
+        },
+        "required": [
+          "pe_host"
+        ]
+      }
+    },
+    {
+      "name": "pe_list_hosts",
+      "title": "PE: List Hosts",
+      "description": "List hypervisor hosts on a Prism Element cluster. Returns host names, IPs, hardware specs, and CVM info.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pe_host": {
+            "type": "string",
+            "description": "Prism Element CVM IP address or hostname"
+          }
+        },
+        "required": [
+          "pe_host"
+        ]
+      }
+    },
+    {
+      "name": "pe_list_containers",
+      "title": "PE: List Containers",
+      "description": "List storage containers on a Prism Element cluster. Returns names, capacity, usage, replication factor, and policies.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pe_host": {
+            "type": "string",
+            "description": "Prism Element CVM IP address or hostname"
+          }
+        },
+        "required": [
+          "pe_host"
+        ]
+      }
+    },
+    {
+      "name": "pe_list_storage_pools",
+      "title": "PE: List Storage Pools",
+      "description": "List storage pools on a Prism Element cluster. Returns pool names, capacity, and disk composition.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pe_host": {
+            "type": "string",
+            "description": "Prism Element CVM IP address or hostname"
+          }
+        },
+        "required": [
+          "pe_host"
+        ]
+      }
+    },
+    {
+      "name": "pe_list_disks",
+      "title": "PE: List Disks",
+      "description": "List physical disks on a Prism Element cluster. Returns disk type (SSD/HDD), status, capacity, and location.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pe_host": {
+            "type": "string",
+            "description": "Prism Element CVM IP address or hostname"
+          }
+        },
+        "required": [
+          "pe_host"
+        ]
+      }
+    },
+    {
+      "name": "pe_list_alerts",
+      "title": "PE: List Alerts",
+      "description": "List alerts on a Prism Element cluster. Returns alert titles, severity, timestamps, and affected entities.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pe_host": {
+            "type": "string",
+            "description": "Prism Element CVM IP address or hostname"
+          },
+          "resolved": {
+            "type": "boolean",
+            "description": "Include resolved alerts (default: false, only active)",
+            "default": false
+          },
+          "count": {
+            "type": "integer",
+            "description": "Maximum number of alerts to return (default: 50)",
+            "default": 50
+          }
+        },
+        "required": [
+          "pe_host"
+        ]
+      }
+    },
+    {
+      "name": "pe_list_protection_domains",
+      "title": "PE: List Protection Domains",
+      "description": "List protection domains on a Prism Element cluster. Returns PD names, protected entities, schedules, and replication state.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pe_host": {
+            "type": "string",
+            "description": "Prism Element CVM IP address or hostname"
+          }
+        },
+        "required": [
+          "pe_host"
+        ]
+      }
+    },
+    {
+      "name": "pe_list_snapshots",
+      "title": "PE: List Snapshots",
+      "description": "List snapshots for a protection domain on a Prism Element cluster.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pe_host": {
+            "type": "string",
+            "description": "Prism Element CVM IP address or hostname"
+          },
+          "protection_domain": {
+            "type": "string",
+            "description": "Name of the protection domain"
+          }
+        },
+        "required": [
+          "pe_host",
+          "protection_domain"
+        ]
+      }
+    },
+    {
+      "name": "pe_get_auth_config",
+      "title": "PE: Get Auth Config",
+      "description": "Get authentication configuration from a Prism Element cluster. Returns auth types, directory services (LDAP/AD), and local account settings.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pe_host": {
+            "type": "string",
+            "description": "Prism Element CVM IP address or hostname"
+          }
+        },
+        "required": [
+          "pe_host"
+        ]
+      }
+    },
+    {
+      "name": "pe_get_smtp_config",
+      "title": "PE: Get SMTP Config",
+      "description": "Get SMTP server configuration from a Prism Element cluster. Returns relay server, port, sender address, and security settings.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pe_host": {
+            "type": "string",
+            "description": "Prism Element CVM IP address or hostname"
+          }
+        },
+        "required": [
+          "pe_host"
+        ]
+      }
+    },
+    {
+      "name": "pe_get_snmp_config",
+      "title": "PE: Get SNMP Config",
+      "description": "Get SNMP configuration from a Prism Element cluster. Returns SNMP traps, transports, users, and community strings.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pe_host": {
+            "type": "string",
+            "description": "Prism Element CVM IP address or hostname"
+          }
+        },
+        "required": [
+          "pe_host"
+        ]
+      }
+    },
+    {
+      "name": "pe_get_syslog_config",
+      "title": "PE: Get Syslog Config",
+      "description": "Get remote syslog server configuration from a Prism Element cluster. Returns syslog targets, protocols, ports, and severity levels.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pe_host": {
+            "type": "string",
+            "description": "Prism Element CVM IP address or hostname"
+          }
+        },
+        "required": [
+          "pe_host"
+        ]
+      }
+    },
+    {
+      "name": "pe_get_alert_email_config",
+      "title": "PE: Get Alert Email Config",
+      "description": "Get alert email notification configuration from a Prism Element cluster. Returns email recipients and alert notification rules.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pe_host": {
+            "type": "string",
+            "description": "Prism Element CVM IP address or hostname"
+          }
+        },
+        "required": [
+          "pe_host"
+        ]
+      }
+    },
+    {
+      "name": "pe_get_nfs_whitelists",
+      "title": "PE: Get NFS Whitelists",
+      "description": "Get global NFS whitelist configuration from a Prism Element cluster. Returns filesystem whitelists (NFS export ACLs) for cluster-wide access control.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pe_host": {
+            "type": "string",
+            "description": "Prism Element CVM IP address or hostname"
+          }
+        },
+        "required": [
+          "pe_host"
+        ]
+      }
+    },
+    {
+      "name": "pe_get_licensing_info",
+      "title": "PE: Get Licensing Info",
+      "description": "Get licensing information from a Prism Element cluster. Returns license type (Starter/Pro/Ultimate), expiry, and enabled cluster features.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pe_host": {
+            "type": "string",
+            "description": "Prism Element CVM IP address or hostname"
+          }
+        },
+        "required": [
+          "pe_host"
+        ]
+      }
+    },
+    {
+      "name": "pe_get_protection_domain",
+      "title": "PE: Get Protection Domain",
+      "description": "Get detailed configuration of a specific protection domain. Returns consistency groups, VM list, schedules, and replication config.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pe_host": {
+            "type": "string",
+            "description": "Prism Element CVM IP address or hostname"
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the protection domain"
+          }
+        },
+        "required": [
+          "pe_host",
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "pe_list_remote_sites",
+      "title": "PE: List Remote Sites",
+      "description": "List remote sites (DR partner clusters) on a Prism Element cluster. Returns remote site names, addresses, replication bandwidth, and capabilities.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pe_host": {
+            "type": "string",
+            "description": "Prism Element CVM IP address or hostname"
+          }
+        },
+        "required": [
+          "pe_host"
+        ]
+      }
+    },
+    {
+      "name": "pe_get_replication_status",
+      "title": "PE: Get Replication Status",
+      "description": "Get active replication status for a protection domain. Returns current replications, lag, and bandwidth usage.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pe_host": {
+            "type": "string",
+            "description": "Prism Element CVM IP address or hostname"
+          },
+          "protection_domain": {
+            "type": "string",
+            "description": "Name of the protection domain"
+          }
+        },
+        "required": [
+          "pe_host",
+          "protection_domain"
+        ]
+      }
+    },
+    {
+      "name": "pe_list_unprotected_vms",
+      "title": "PE: List Unprotected VMs",
+      "description": "List VMs not in any protection domain on a Prism Element cluster. Identifies compliance gaps where VMs lack DR protection.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pe_host": {
+            "type": "string",
+            "description": "Prism Element CVM IP address or hostname"
+          }
+        },
+        "required": [
+          "pe_host"
+        ]
+      }
+    },
+    {
+      "name": "pe_get_host_disks",
+      "title": "PE: Get Host Disks",
+      "description": "Get physical disk inventory for a specific host. Returns disk model, serial number, firmware, tier (SSD/HDD), status, and capacity.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pe_host": {
+            "type": "string",
+            "description": "Prism Element CVM IP address or hostname"
+          },
+          "host_uuid": {
+            "type": "string",
+            "description": "UUID of the host to get disk inventory for"
+          }
+        },
+        "required": [
+          "pe_host",
+          "host_uuid"
+        ]
+      }
+    },
+    {
+      "name": "pe_get_host_nics",
+      "title": "PE: Get Host NICs",
+      "description": "Get network interface details for a specific host. Returns NIC name, speed, link state, MAC address, and switch info via LLDP.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pe_host": {
+            "type": "string",
+            "description": "Prism Element CVM IP address or hostname"
+          },
+          "host_uuid": {
+            "type": "string",
+            "description": "UUID of the host to get NIC details for"
+          }
+        },
+        "required": [
+          "pe_host",
+          "host_uuid"
+        ]
+      }
+    },
+    {
+      "name": "pe_list_cvms",
+      "title": "PE: List CVMs",
+      "description": "List Controller VMs (CVMs) on a Prism Element cluster. Returns CVM IP, memory allocation, power state, and associated host.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pe_host": {
+            "type": "string",
+            "description": "Prism Element CVM IP address or hostname"
+          }
+        },
+        "required": [
+          "pe_host"
+        ]
+      }
+    },
+    {
+      "name": "pe_list_volume_groups",
+      "title": "PE: List Volume Groups",
+      "description": "List volume groups on a Prism Element cluster. Returns VG name, size, iSCSI target IQN, attached VMs, and CHAP config.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pe_host": {
+            "type": "string",
+            "description": "Prism Element CVM IP address or hostname"
+          }
+        },
+        "required": [
+          "pe_host"
+        ]
+      }
+    },
+    {
+      "name": "pe_get_volume_group",
+      "title": "PE: Get Volume Group",
+      "description": "Get detailed volume group configuration. Returns disk list, client attachments, iSCSI details, and usage.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pe_host": {
+            "type": "string",
+            "description": "Prism Element CVM IP address or hostname"
+          },
+          "uuid": {
+            "type": "string",
+            "description": "UUID of the volume group"
+          }
+        },
+        "required": [
+          "pe_host",
+          "uuid"
+        ]
+      }
+    },
+    {
+      "name": "pe_get_cluster_health",
+      "title": "PE: Get Cluster Health",
+      "description": "Get cluster data resiliency and health status. Returns domain fault tolerance status, rebuild capacity, and overall health.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pe_host": {
+            "type": "string",
+            "description": "Prism Element CVM IP address or hostname"
+          }
+        },
+        "required": [
+          "pe_host"
+        ]
+      }
+    },
+    {
+      "name": "pe_list_health_checks",
+      "title": "PE: List Health Checks",
+      "description": "List NCC-style health check results on a Prism Element cluster. Returns check names, statuses, and any warnings or failures.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pe_host": {
+            "type": "string",
+            "description": "Prism Element CVM IP address or hostname"
+          }
+        },
+        "required": [
+          "pe_host"
+        ]
+      }
+    },
+    {
+      "name": "pe_list_images",
+      "title": "PE: List Images",
+      "description": "List images (ISOs, disk images) on a Prism Element cluster. Returns image name, type, state, size, and source URI.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pe_host": {
+            "type": "string",
+            "description": "Prism Element CVM IP address or hostname"
+          }
+        },
+        "required": [
+          "pe_host"
+        ]
+      }
+    },
+    {
+      "name": "pe_list_networks",
+      "title": "PE: List Networks",
+      "description": "List networks (VLANs) on a Prism Element cluster. Returns network name, VLAN ID, managed/unmanaged state, and IP pool configuration.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pe_host": {
+            "type": "string",
+            "description": "Prism Element CVM IP address or hostname"
+          }
+        },
+        "required": [
+          "pe_host"
+        ]
+      }
+    },
+    {
+      "name": "pe_get_metro_witness",
+      "title": "PE: Get Metro Witness",
+      "description": "Get Metro Availability witness server configuration. Returns witness address, status, and cluster association.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pe_host": {
+            "type": "string",
+            "description": "Prism Element CVM IP address or hostname"
+          }
+        },
+        "required": [
+          "pe_host"
+        ]
+      }
+    },
+    {
+      "name": "pe_list_dr_snapshots",
+      "title": "PE: List DR Snapshots",
+      "description": "List disaster recovery snapshots across remote sites. Returns snapshot IDs, PD names, remote site, and retention info.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pe_host": {
+            "type": "string",
+            "description": "Prism Element CVM IP address or hostname"
+          }
+        },
+        "required": [
+          "pe_host"
+        ]
+      }
+    },
+    {
+      "name": "pe_list_pd_replications",
+      "title": "PE: List PD Replications",
+      "description": "List all active protection domain replications across the cluster. Returns replication status, progress, bandwidth, and remote site for all PDs.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pe_host": {
+            "type": "string",
+            "description": "Prism Element CVM IP address or hostname"
+          }
+        },
+        "required": [
+          "pe_host"
+        ]
+      }
+    },
+    {
+      "name": "list_subnets",
+      "title": "List Subnets",
+      "description": "List ALL subnets/VLANs in Prism Central (auto-paginates internally). Returns complete results in one call \u2014 no manual pagination needed.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData filter expression. Examples: \"name eq 'production-vlan'\", \"vlanId eq 100\""
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Optional cap on results. Omit to get ALL subnets (default behavior)."
+          }
+        }
+      }
+    },
+    {
+      "name": "get_subnet",
+      "title": "Get Subnet",
+      "description": "Get detailed subnet configuration including IP pools, DHCP config, and virtual switch assignment.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "subnet_uuid": {
+            "type": "string",
+            "description": "The UUID (extId) of the subnet"
+          }
+        },
+        "required": [
+          "subnet_uuid"
+        ]
+      }
+    },
+    {
+      "name": "list_images",
+      "title": "List Images",
+      "description": "List ALL disk images (ISOs, QCOW2) in the image library (auto-paginates internally). Returns complete results in one call \u2014 no manual pagination needed.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData filter expression. Examples: \"name eq 'ubuntu-22.04'\", \"type eq 'DISK_IMAGE'\""
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Optional cap on results. Omit to get ALL images (default behavior)."
+          }
+        }
+      }
+    },
+    {
+      "name": "get_image",
+      "title": "Get Image",
+      "description": "Get detailed information about a specific disk image by UUID. Returns size, type, source, and cluster placement.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "image_uuid": {
+            "type": "string",
+            "description": "The UUID (extId) of the image"
+          }
+        },
+        "required": [
+          "image_uuid"
+        ]
+      }
+    },
+    {
+      "name": "list_categories",
+      "title": "List Categories",
+      "description": "List ALL category keys and values (auto-paginates internally). Returns complete results in one call \u2014 no manual pagination needed.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData filter expression. Example: \"key eq 'Environment'\""
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Optional cap on results. Omit to get ALL categories (default behavior)."
+          }
+        }
+      }
+    },
+    {
+      "name": "get_category",
+      "title": "Get Category",
+      "description": "Get all values for a specific category key. Example: category 'Environment' may have values 'Production', 'Dev', 'Test'.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "category_uuid": {
+            "type": "string",
+            "description": "The UUID (extId) of the category"
+          }
+        },
+        "required": [
+          "category_uuid"
+        ]
+      }
+    },
+    {
+      "name": "list_tasks",
+      "title": "List Tasks",
+      "description": "List ALL recent Nutanix tasks (auto-paginates internally). Returns complete results in one call \u2014 no manual pagination needed. Use filter to narrow by status (RUNNING, FAILED, SUCCEEDED).",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData filter expression. Examples: \"status eq 'RUNNING'\", \"status eq 'FAILED'\", \"status eq 'SUCCEEDED'\""
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Optional cap on results (default: 20).",
+            "default": 20
+          }
+        }
+      }
+    },
+    {
+      "name": "get_task",
+      "title": "Get Task",
+      "description": "Get detailed status of a specific task by its UUID. Returns completion percentage, status, error details, and associated entities. Use this to verify whether an async operation (VM create, power on, etc.) succeeded.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "task_uuid": {
+            "type": "string",
+            "description": "The UUID (extId) of the task to check"
+          }
+        },
+        "required": [
+          "task_uuid"
+        ]
+      }
+    },
+    {
+      "name": "list_alerts",
+      "title": "List Alerts",
+      "description": "List ALL alerts from Prism Central (auto-paginates internally). Returns complete results in one call \u2014 no manual pagination needed. Supports filtering by severity and resolved status.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": [
+              "CRITICAL",
+              "WARNING",
+              "INFO"
+            ],
+            "description": "Filter by severity level."
+          },
+          "resolved": {
+            "type": "boolean",
+            "description": "If true, show resolved alerts. If false, show only active. Default: false (active only)."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData filter expression for advanced filtering. Examples: \"severity eq 'CRITICAL'\", \"creationTime gt '2026-05-01T00:00:00Z'\""
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Optional cap on results. Default: 50."
+          }
+        }
+      }
+    },
+    {
+      "name": "get_alert",
+      "title": "Get Alert",
+      "description": "Get full details of a specific alert by UUID. Returns affected entities, resolution guidance, parameters, and alert lifecycle information.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "alert_uuid": {
+            "type": "string",
+            "description": "The UUID (extId) of the alert."
+          }
+        },
+        "required": [
+          "alert_uuid"
+        ]
+      }
+    },
+    {
+      "name": "acknowledge_alert",
+      "title": "Acknowledge Alert",
+      "description": "Acknowledge or resolve an alert by UUID. Acknowledging marks the alert as seen; resolving marks it as fixed.",
+      "min_role": "operator",
+      "destructive": false,
+      "read_only": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "alert_uuid": {
+            "type": "string",
+            "description": "The UUID (extId) of the alert to acknowledge/resolve."
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "ACKNOWLEDGE",
+              "RESOLVE"
+            ],
+            "description": "Action to take. Default: ACKNOWLEDGE."
+          }
+        },
+        "required": [
+          "alert_uuid"
+        ]
+      }
+    },
+    {
+      "name": "assign_category",
+      "title": "Assign Category",
+      "description": "Assign a category key:value pair to a VM. Categories are Nutanix's primary mechanism for resource organization, security policy targeting (Flow microsegmentation), and DR policy assignment.",
+      "min_role": "operator",
+      "destructive": false,
+      "read_only": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "vm_uuid": {
+            "type": "string",
+            "description": "The UUID (extId) of the VM to tag."
+          },
+          "category_key": {
+            "type": "string",
+            "description": "Category key (e.g., 'Environment', 'AppType', 'Backup')."
+          },
+          "category_value": {
+            "type": "string",
+            "description": "Category value (e.g., 'Production', 'WebServer', 'Gold')."
+          }
+        },
+        "required": [
+          "vm_uuid",
+          "category_key",
+          "category_value"
+        ]
+      }
+    },
+    {
+      "name": "remove_category",
+      "title": "Remove Category",
+      "description": "Remove a category key:value assignment from a VM. Only removes the specified category; other categories remain intact.",
+      "min_role": "operator",
+      "destructive": false,
+      "read_only": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "vm_uuid": {
+            "type": "string",
+            "description": "The UUID (extId) of the VM."
+          },
+          "category_key": {
+            "type": "string",
+            "description": "Category key to remove."
+          },
+          "category_value": {
+            "type": "string",
+            "description": "Category value to remove."
+          }
+        },
+        "required": [
+          "vm_uuid",
+          "category_key",
+          "category_value"
+        ]
+      }
+    },
+    {
+      "name": "list_entities_by_category",
+      "title": "List Entities By Category",
+      "description": "Find ALL VMs tagged with a specific category key:value pair (auto-paginates internally). Returns complete results in one call \u2014 no manual pagination needed.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "category_key": {
+            "type": "string",
+            "description": "Category key to query (e.g., 'Environment')."
+          },
+          "category_value": {
+            "type": "string",
+            "description": "Category value to query (e.g., 'Production')."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Optional cap on results. Default: 50."
+          }
+        },
+        "required": [
+          "category_key",
+          "category_value"
+        ]
+      }
+    },
+    {
+      "name": "snapshot_vm",
+      "title": "Snapshot VM",
+      "description": "Create an on-demand snapshot (recovery point) of a VM. Returns the recovery point ID and task UUID for tracking. Use before mutating operations as a safety net.",
+      "min_role": "operator",
+      "destructive": false,
+      "read_only": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "vm_uuid": {
+            "type": "string",
+            "description": "The UUID (extId) of the VM to snapshot."
+          },
+          "name": {
+            "type": "string",
+            "description": "Optional name for the recovery point. Defaults to auto-generated."
+          },
+          "expiration_days": {
+            "type": "integer",
+            "description": "Number of days before the recovery point expires. Default: 30."
+          }
+        },
+        "required": [
+          "vm_uuid"
+        ]
+      }
+    },
+    {
+      "name": "list_vm_snapshots",
+      "title": "List VM Snapshots",
+      "description": "List recovery points (snapshots) for a specific VM. Returns up to 'limit' most relevant results (default: 20).",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "vm_uuid": {
+            "type": "string",
+            "description": "The UUID (extId) of the VM whose snapshots to list."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Optional cap on results. Default: 20."
+          }
+        },
+        "required": [
+          "vm_uuid"
+        ]
+      }
+    },
+    {
+      "name": "restore_vm_snapshot",
+      "title": "Restore VM Snapshot",
+      "description": "Restore a VM to a previous recovery point (snapshot). This reverts the VM's disks and configuration to the snapshot state. The VM should be powered off before restore.",
+      "min_role": "admin",
+      "destructive": true,
+      "read_only": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "recovery_point_id": {
+            "type": "string",
+            "description": "The UUID of the recovery point to restore from."
+          },
+          "vm_uuid": {
+            "type": "string",
+            "description": "The UUID of the VM to restore."
+          }
+        },
+        "required": [
+          "recovery_point_id",
+          "vm_uuid"
+        ]
+      }
+    },
+    {
+      "name": "generate_asbuilt",
+      "title": "Generate AsBuilt",
+      "description": "Generate an infrastructure AsBuilt report from a Nutanix Prism Element cluster. Accepts a PE IP address, cluster name, or cluster UUID \u2014 cluster names and UUIDs are auto-resolved to the PE external IP via Prism Central. Queries live cluster data and returns a structured Markdown report with tables and Mermaid topology diagrams. Use 'sections' to include only specific parts. Available sections: overview, system, hosts, vms, networks, storage, protection_domains, alerts, health.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pe_host": {
+            "type": "string",
+            "description": "Prism Element CVM IP, cluster external IP, cluster name, or cluster UUID"
+          },
+          "sections": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Which sections to include in the report. Defaults to all sections if omitted. Options: overview, system, hosts, vms, networks, storage, protection_domains, alerts, health"
+          }
+        },
+        "required": [
+          "pe_host"
+        ]
+      }
+    },
+    {
+      "name": "export_asbuilt_html",
+      "title": "Export AsBuilt HTML",
+      "description": "Convert an AsBuilt Markdown report to a self-contained HTML file with print-optimized CSS. Open in a browser and use Ctrl+P / Cmd+P to save as PDF. Includes Mermaid diagram rendering via CDN. Pass the markdown string from generate_asbuilt output.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "markdown": {
+            "type": "string",
+            "description": "The Markdown report content from generate_asbuilt"
+          },
+          "title": {
+            "type": "string",
+            "description": "Report title (defaults to 'Nutanix AsBuilt Report')"
+          }
+        },
+        "required": [
+          "markdown"
+        ]
+      }
+    },
+    {
+      "name": "get_project_architecture",
+      "title": "Get Project Architecture",
+      "description": "Get the Nutanix MCP Server project architecture documentation. Returns a Markdown document with component diagrams, API layer details, tool inventory, design decisions, deployment topology, and file structure.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    }
+  ]
+}

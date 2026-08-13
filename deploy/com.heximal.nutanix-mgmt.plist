@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  launchd unit for running the Nutanix management API natively on macOS
+  (no Docker). Install:
+
+    # 1. Create a venv with the api extra:
+    cd /Users/SHARED/nutanix-mcp-server
+    python3 -m venv .venv && ./.venv/bin/pip install -e '.[api]'
+
+    # 2. Put secrets in .env and .management.env (chmod 600), users.json somewhere safe.
+
+    # 3. Copy + load:
+    cp deploy/com.heximal.nutanix-mgmt.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.heximal.nutanix-mgmt.plist
+    launchctl start com.heximal.nutanix-mgmt
+
+  Adjust WorkingDirectory / ProgramArguments paths and the EnvironmentVariables
+  below for your machine. Front it with a TLS proxy (Caddy via Homebrew, or
+  `caddy reverse-proxy --to 127.0.0.1:9780`) — do not expose 9780 directly.
+-->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.heximal.nutanix-mgmt</string>
+
+	<key>WorkingDirectory</key>
+	<string>/Users/SHARED/nutanix-mcp-server</string>
+
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/SHARED/nutanix-mcp-server/.venv/bin/uvicorn</string>
+		<string>management_api:app</string>
+		<string>--host</string>
+		<string>127.0.0.1</string>
+		<string>--port</string>
+		<string>9780</string>
+	</array>
+
+	<key>EnvironmentVariables</key>
+	<dict>
+		<!-- Point at the users file; other MGMT_* / NUTANIX_* come from .env files
+		     loaded by the app. If you prefer, set them all here instead. -->
+		<key>MGMT_USERS_FILE</key>
+		<string>/Users/SHARED/nutanix-mcp-server/users.json</string>
+	</dict>
+
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+
+	<key>StandardOutPath</key>
+	<string>/tmp/nutanix-mgmt.out.log</string>
+	<key>StandardErrorPath</key>
+	<string>/tmp/nutanix-mgmt.err.log</string>
+</dict>
+</plist>

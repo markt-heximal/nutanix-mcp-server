@@ -109,8 +109,8 @@ async def handle_list_alerts(client: NutanixClient, arguments: dict[str, Any]) -
     filter_expr = " and ".join(filter_parts) if filter_parts else None
 
     result = await client.v4_list(
-        namespace="prism",
-        path="config/alerts",
+        namespace="monitoring",
+        path="serviceability/alerts",
         filter=filter_expr,
         top=limit,
         orderby="creationTime desc",
@@ -149,8 +149,8 @@ async def handle_get_alert(client: NutanixClient, arguments: dict[str, Any]) -> 
     alert_uuid = arguments["alert_uuid"]
 
     result = await client.v4_get(
-        namespace="prism",
-        path=f"config/alerts/{alert_uuid}",
+        namespace="monitoring",
+        path=f"serviceability/alerts/{alert_uuid}",
     )
 
     data = result.get("data", result)
@@ -190,15 +190,13 @@ async def handle_acknowledge_alert(client: NutanixClient, arguments: dict[str, A
     alert_uuid = arguments["alert_uuid"]
     action = arguments.get("action", "ACKNOWLEDGE")
 
-    if action == "RESOLVE":
-        body = {"isResolved": True}
-    else:
-        body = {"isAcknowledged": True}
+    # v4 monitoring exposes acknowledge/resolve as $actions endpoints.
+    sub_action = "resolve" if action == "RESOLVE" else "acknowledge"
 
     # Get current alert for ETag (header is authoritative; body metadata is a fallback)
     current, etag = await client.v4_get_with_etag(
-        namespace="prism",
-        path=f"config/alerts/{alert_uuid}",
+        namespace="monitoring",
+        path=f"serviceability/alerts/{alert_uuid}",
     )
     if not etag:
         etag = current.get("data", {}).get("$metadata", {}).get("ETag")
@@ -207,10 +205,9 @@ async def handle_acknowledge_alert(client: NutanixClient, arguments: dict[str, A
     if etag:
         headers["If-Match"] = etag
 
-    await client.v4_put(
-        namespace="prism",
-        path=f"config/alerts/{alert_uuid}",
-        body=body,
+    await client.v4_post(
+        namespace="monitoring",
+        path=f"serviceability/alerts/{alert_uuid}/$actions/{sub_action}",
         headers=headers if headers else None,
     )
 

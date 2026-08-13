@@ -102,7 +102,103 @@ CLUSTER_TOOLS: list[dict] = [
             },
         },
     },
+    {
+        "name": "create_storage_container",
+        "description": (
+            "Create a storage container on a cluster. Containers thin-provision against "
+            "the cluster's storage pool, so capacity settings are optional. Optionally "
+            "set replication factor, an advertised (logical) capacity cap, an explicit "
+            "reservation, and inline compression. Returns a task UUID."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Storage container name."},
+                "cluster_uuid": {
+                    "type": "string",
+                    "description": "UUID (extId) of the cluster to create the container on.",
+                },
+                "replication_factor": {
+                    "type": "integer",
+                    "description": "Replication factor (1, 2, or 3). Must not exceed the cluster's RF. Default: cluster default.",
+                },
+                "advertised_capacity_gb": {
+                    "type": "integer",
+                    "description": "Optional advertised (logical) capacity cap, in GiB.",
+                },
+                "reserved_capacity_gb": {
+                    "type": "integer",
+                    "description": "Optional explicit reserved (guaranteed) capacity, in GiB.",
+                },
+                "compression_enabled": {
+                    "type": "boolean",
+                    "description": "Enable inline compression. Default: cluster default.",
+                },
+            },
+            "required": ["name", "cluster_uuid"],
+        },
+    },
+    {
+        "name": "resize_storage_container",
+        "description": (
+            "Resize or reconfigure a storage container: change its advertised (logical) "
+            "capacity cap, explicit reservation, name, or compression setting. Uses "
+            "ETag-based concurrency control. Returns a task UUID."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "container_uuid": {
+                    "type": "string",
+                    "description": "The UUID (extId) of the storage container.",
+                },
+                "advertised_capacity_gb": {
+                    "type": "integer",
+                    "description": "New advertised (logical) capacity cap, in GiB.",
+                },
+                "reserved_capacity_gb": {
+                    "type": "integer",
+                    "description": "New explicit reserved (guaranteed) capacity, in GiB.",
+                },
+                "name": {"type": "string", "description": "New container name."},
+                "compression_enabled": {
+                    "type": "boolean",
+                    "description": "Enable or disable inline compression.",
+                },
+            },
+            "required": ["container_uuid"],
+        },
+    },
+    {
+        "name": "delete_storage_container",
+        "description": (
+            "Delete a storage container by UUID. Requires confirm=true to proceed. Uses "
+            "ETag-based concurrency control. Returns a task UUID. Fails if the container "
+            "still holds vdisks/VMs unless ignore_small_files is set."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "container_uuid": {
+                    "type": "string",
+                    "description": "The UUID (extId) of the storage container to delete.",
+                },
+                "confirm": {
+                    "type": "boolean",
+                    "description": "Must be true to proceed with deletion.",
+                },
+                "ignore_small_files": {
+                    "type": "boolean",
+                    "description": "Allow deletion even if the container holds small files. Default: false.",
+                },
+            },
+            "required": ["container_uuid"],
+        },
+    },
 ]
+
+# 1 GiB in bytes — capacity args are expressed in GiB for convenience.
+_GIB = 1024**3
 
 
 # ─── Tool Handlers ────────────────────────────────────────────────────────────
@@ -190,7 +286,7 @@ async def handle_list_hosts(client: NutanixClient, arguments: dict[str, Any]) ->
             "numCpuSockets": h.number_of_cpu_sockets,
             "numCpuCores": h.number_of_cpu_cores,
             "memorySizeBytes": h.memory_size_bytes,
-            "cluster": cluster_ref.ext_id if cluster_ref else None,
+            "cluster": cluster_ref.uuid if cluster_ref else None,
             "clusterName": cluster_ref.name if cluster_ref else None,
         }
 
@@ -247,6 +343,81 @@ async def handle_list_storage_containers(client: NutanixClient, arguments: dict[
     }
 
 
+async def handle_create_storage_container(client: NutanixClient, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Create a storage container using the official Nutanix SDK."""
+    import ntnx_clustermgmt_py_client.models.clustermgmt.v4.config.StorageContainer as SCModule
+
+    cluster_uuid = arguments["cluster_uuid"]
+    sc = SCModule.StorageContainer()
+    sc.name = arguments["name"]
+    sc.cluster_ext_id = cluster_uuid
+    if "replication_factor" in arguments:
+        sc.replication_factor = arguments["replication_factor"]
+    if "advertised_capacity_gb" in arguments:
+        sc.logical_advertised_capacity_bytes = int(arguments["advertised_capacity_gb"]) * _GIB
+    if "reserved_capacity_gb" in arguments:
+        sc.logical_explicit_reserved_capacity_bytes = int(arguments["reserved_capacity_gb"]) * _GIB
+    if "compression_enabled" in arguments:
+        sc.is_compression_enabled = arguments["compression_enabled"]
+
+    sdk = client.sdk
+    # create_storage_container requires the target cluster in an X-Cluster-Id header.
+    response = await sdk.call(
+        sdk.storage_container_api.create_storage_container, sc, X_Cluster_Id=cluster_uuid
+    )
+    task_id = response.data.ext_id if response.data else None
+    return {"status": "storage_container_creation_initiated", "taskExtId": task_id}
+
+
+async def handle_resize_storage_container(client: NutanixClient, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Resize/reconfigure a storage container with ETag concurrency control."""
+    container_uuid = arguments["container_uuid"]
+    sdk = client.sdk
+
+    get_response = await sdk.call(sdk.storage_container_api.get_storage_container_by_id, container_uuid)
+    etag = sdk.get_etag(get_response)
+    sc = get_response.data
+
+    if "name" in arguments:
+        sc.name = arguments["name"]
+    if "advertised_capacity_gb" in arguments:
+        sc.logical_advertised_capacity_bytes = int(arguments["advertised_capacity_gb"]) * _GIB
+    if "reserved_capacity_gb" in arguments:
+        sc.logical_explicit_reserved_capacity_bytes = int(arguments["reserved_capacity_gb"]) * _GIB
+    if "compression_enabled" in arguments:
+        sc.is_compression_enabled = arguments["compression_enabled"]
+
+    response = await sdk.call(
+        sdk.storage_container_api.update_storage_container_by_id, container_uuid, sc, if_match=etag
+    )
+    task_id = response.data.ext_id if response.data else None
+    return {"status": "storage_container_update_initiated", "taskExtId": task_id}
+
+
+async def handle_delete_storage_container(client: NutanixClient, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Delete a storage container using the official Nutanix SDK (confirm-guarded)."""
+    container_uuid = arguments["container_uuid"]
+    if not arguments.get("confirm", False):
+        return {
+            "status": "error",
+            "message": "Deletion not confirmed. Set 'confirm: true' to proceed with container deletion.",
+        }
+
+    sdk = client.sdk
+    get_response = await sdk.call(sdk.storage_container_api.get_storage_container_by_id, container_uuid)
+    etag = sdk.get_etag(get_response)
+
+    kwargs: dict[str, Any] = {"if_match": etag}
+    if arguments.get("ignore_small_files"):
+        kwargs["ignoreSmallFiles"] = True
+
+    response = await sdk.call(
+        sdk.storage_container_api.delete_storage_container_by_id, container_uuid, **kwargs
+    )
+    task_id = response.data.ext_id if response.data else None
+    return {"status": "storage_container_deletion_initiated", "taskExtId": task_id}
+
+
 # ─── Handler Dispatch ─────────────────────────────────────────────────────────
 
 CLUSTER_HANDLERS: dict[str, Any] = {
@@ -255,4 +426,7 @@ CLUSTER_HANDLERS: dict[str, Any] = {
     "list_hosts": handle_list_hosts,
     "get_host": handle_get_host,
     "list_storage_containers": handle_list_storage_containers,
+    "create_storage_container": handle_create_storage_container,
+    "resize_storage_container": handle_resize_storage_container,
+    "delete_storage_container": handle_delete_storage_container,
 }

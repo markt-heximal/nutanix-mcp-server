@@ -26,14 +26,22 @@ dependencies = [
     "uvicorn>=0.30.0",
     "starlette>=0.37.0",
     "fastapi>=0.110.0",
-    "ntnx-vmm-py-client>=4.0.0,<4.2",
-    "ntnx-clustermgmt-py-client>=4.0.0,<4.2",
-    "ntnx-networking-py-client>=4.0.0,<4.2",
-    "ntnx-prism-py-client>=4.0.0,<4.2",
-    "ntnx-dataprotection-py-client>=4.0.0,<4.2",
+    # Pin to the v4.0 SDKs: they call /api/.../v4.0/... paths, which PC serves on
+    # pc.2024.x. The 4.1.x SDKs call /api/.../v4.1/... which 404s on those PCs.
+    # Bump the ceiling to <4.2 only once the target PC is on a v4.1-capable build.
+    "ntnx-vmm-py-client>=4.0.0,<4.1",
+    "ntnx-clustermgmt-py-client>=4.0.0,<4.1",
+    "ntnx-networking-py-client>=4.0.0,<4.1",
+    "ntnx-prism-py-client>=4.0.0,<4.1",
+    "ntnx-dataprotection-py-client>=4.0.0,<4.1",
 ]
 
 [project.optional-dependencies]
+# Authenticated management API (management_api.py). fastapi/uvicorn are already
+# core dependencies; this group adds JWT session signing.
+api = [
+    "pyjwt>=2.8.0,<3.0",
+]
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",

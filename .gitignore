@@ -1,5 +1,10 @@
 # Environment
 .env
+# Secret env files for the façade / management API (keep *.env.example tracked)
+.facade.env
+.management.env
+*.local.env
+users.json
 .venv/
 venv/
 env/

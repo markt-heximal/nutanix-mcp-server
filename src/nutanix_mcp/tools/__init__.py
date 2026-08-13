@@ -35,6 +35,12 @@ _WRITE_TOOL_HINTS: dict[str, dict[str, bool]] = {
     "acknowledge_alert": {"destructiveHint": False, "idempotentHint": True},
     "assign_category": {"destructiveHint": False, "idempotentHint": True},
     "remove_category": {"destructiveHint": False, "idempotentHint": True},
+    "create_subnet": {"destructiveHint": False, "idempotentHint": False},
+    "update_subnet": {"destructiveHint": True, "idempotentHint": True},
+    "delete_subnet": {"destructiveHint": True, "idempotentHint": True},
+    "create_storage_container": {"destructiveHint": False, "idempotentHint": False},
+    "resize_storage_container": {"destructiveHint": True, "idempotentHint": True},
+    "delete_storage_container": {"destructiveHint": True, "idempotentHint": True},
 }
 
 # Acronyms and product terms that plain title-casing would mangle.
