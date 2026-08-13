@@ -46,6 +46,87 @@ NETWORKING_TOOLS: list[dict] = [
         },
     },
     {
+        "name": "create_subnet",
+        "description": (
+            "Create a VLAN-backed subnet on a cluster. Provide the VLAN id and target "
+            "cluster UUID. Optionally enable IPAM (a managed subnet) by supplying a "
+            "network CIDR, default gateway, and a DHCP pool range. Returns a task UUID."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Subnet name."},
+                "cluster_uuid": {
+                    "type": "string",
+                    "description": "UUID (extId) of the cluster to create the subnet on.",
+                },
+                "vlan_id": {
+                    "type": "integer",
+                    "description": "VLAN ID (use 0 for the untagged/native VLAN).",
+                },
+                "subnet_type": {
+                    "type": "string",
+                    "enum": ["VLAN", "OVERLAY"],
+                    "description": "Subnet type. Default: VLAN.",
+                },
+                "description": {"type": "string", "description": "Optional description."},
+                "network_cidr": {
+                    "type": "string",
+                    "description": "Optional. Enables IPAM. Network in CIDR form, e.g. '10.0.1.0/24'.",
+                },
+                "gateway_ip": {
+                    "type": "string",
+                    "description": "Optional default gateway IP (requires network_cidr).",
+                },
+                "dhcp_pool_start": {
+                    "type": "string",
+                    "description": "Optional DHCP/managed pool start IP (requires network_cidr).",
+                },
+                "dhcp_pool_end": {
+                    "type": "string",
+                    "description": "Optional DHCP/managed pool end IP (requires network_cidr).",
+                },
+            },
+            "required": ["name", "cluster_uuid", "vlan_id"],
+        },
+    },
+    {
+        "name": "update_subnet",
+        "description": (
+            "Update an existing subnet's configuration (name, description, VLAN id, or "
+            "IPAM settings). Uses ETag-based concurrency control. Returns a task UUID."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "subnet_uuid": {
+                    "type": "string",
+                    "description": "The UUID (extId) of the subnet to update.",
+                },
+                "name": {"type": "string", "description": "New subnet name."},
+                "description": {"type": "string", "description": "New description."},
+                "vlan_id": {"type": "integer", "description": "New VLAN ID."},
+                "network_cidr": {
+                    "type": "string",
+                    "description": "Set/replace the IPAM network CIDR, e.g. '10.0.1.0/24'.",
+                },
+                "gateway_ip": {
+                    "type": "string",
+                    "description": "Set the default gateway IP (requires network_cidr).",
+                },
+                "dhcp_pool_start": {
+                    "type": "string",
+                    "description": "Managed pool start IP (requires network_cidr).",
+                },
+                "dhcp_pool_end": {
+                    "type": "string",
+                    "description": "Managed pool end IP (requires network_cidr).",
+                },
+            },
+            "required": ["subnet_uuid"],
+        },
+    },
+    {
         "name": "list_images",
         "description": (
             "List ALL disk images (ISOs, QCOW2) in the image library (auto-paginates internally). "
@@ -216,6 +297,94 @@ async def handle_get_subnet(client: NutanixClient, arguments: dict[str, Any]) ->
     return subnet.to_dict() if subnet else {}
 
 
+def _build_subnet_ip_config(arguments: dict[str, Any]) -> Any:
+    """Build an IPConfig entry from IPAM arguments, or None when no CIDR is given."""
+    network_cidr = arguments.get("network_cidr")
+    if not network_cidr:
+        return None
+
+    import ntnx_networking_py_client.models.common.v1.config.IPv4Address as AddrModule
+    import ntnx_networking_py_client.models.networking.v4.config.IPConfig as IPConfigModule
+    import ntnx_networking_py_client.models.networking.v4.config.IPv4Config as IPv4ConfigModule
+    import ntnx_networking_py_client.models.networking.v4.config.IPv4Pool as PoolModule
+    import ntnx_networking_py_client.models.networking.v4.config.IPv4Subnet as SubnetIpModule
+
+    ip, _, prefix_str = network_cidr.partition("/")
+    prefix = int(prefix_str) if prefix_str else 24
+
+    ipv4_config = IPv4ConfigModule.IPv4Config()
+    ipv4_config.ip_subnet = SubnetIpModule.IPv4Subnet(
+        ip=AddrModule.IPv4Address(value=ip, prefix_length=prefix),
+        prefix_length=prefix,
+    )
+
+    gateway_ip = arguments.get("gateway_ip")
+    if gateway_ip:
+        ipv4_config.default_gateway_ip = AddrModule.IPv4Address(value=gateway_ip, prefix_length=prefix)
+
+    pool_start = arguments.get("dhcp_pool_start")
+    pool_end = arguments.get("dhcp_pool_end")
+    if pool_start and pool_end:
+        ipv4_config.pool_list = [
+            PoolModule.IPv4Pool(
+                start_ip=AddrModule.IPv4Address(value=pool_start, prefix_length=prefix),
+                end_ip=AddrModule.IPv4Address(value=pool_end, prefix_length=prefix),
+            )
+        ]
+
+    ip_config = IPConfigModule.IPConfig()
+    ip_config.ipv4 = ipv4_config
+    return ip_config
+
+
+async def handle_create_subnet(client: NutanixClient, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Create a subnet using the official Nutanix SDK."""
+    import ntnx_networking_py_client.models.networking.v4.config.Subnet as SubnetModule
+
+    subnet = SubnetModule.Subnet()
+    subnet.name = arguments["name"]
+    subnet.subnet_type = arguments.get("subnet_type", "VLAN")
+    subnet.network_id = arguments["vlan_id"]
+    # cluster_reference is a plain cluster extId string on the Subnet model.
+    subnet.cluster_reference = arguments["cluster_uuid"]
+    if arguments.get("description"):
+        subnet.description = arguments["description"]
+
+    ip_config = _build_subnet_ip_config(arguments)
+    if ip_config:
+        subnet.ip_config = [ip_config]
+
+    sdk = client.sdk
+    response = await sdk.call(sdk.subnet_api.create_subnet, subnet)
+    task_id = response.data.ext_id if response.data else None
+    return {"status": "subnet_creation_initiated", "taskExtId": task_id}
+
+
+async def handle_update_subnet(client: NutanixClient, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Update a subnet using the official Nutanix SDK with ETag concurrency control."""
+    subnet_uuid = arguments["subnet_uuid"]
+    sdk = client.sdk
+
+    get_response = await sdk.call(sdk.subnet_api.get_subnet_by_id, subnet_uuid)
+    etag = sdk.get_etag(get_response)
+    subnet = get_response.data
+
+    if "name" in arguments:
+        subnet.name = arguments["name"]
+    if "description" in arguments:
+        subnet.description = arguments["description"]
+    if "vlan_id" in arguments:
+        subnet.network_id = arguments["vlan_id"]
+
+    ip_config = _build_subnet_ip_config(arguments)
+    if ip_config:
+        subnet.ip_config = [ip_config]
+
+    response = await sdk.call(sdk.subnet_api.update_subnet_by_id, subnet_uuid, subnet, if_match=etag)
+    task_id = response.data.ext_id if response.data else None
+    return {"status": "subnet_update_initiated", "taskExtId": task_id}
+
+
 async def handle_list_images(client: NutanixClient, arguments: dict[str, Any]) -> dict[str, Any]:
     """List images using official Nutanix SDK."""
     filter_expr = arguments.get("filter")
@@ -304,6 +473,8 @@ async def handle_get_category(client: NutanixClient, arguments: dict[str, Any]) 
 NETWORKING_HANDLERS: dict[str, Any] = {
     "list_subnets": handle_list_subnets,
     "get_subnet": handle_get_subnet,
+    "create_subnet": handle_create_subnet,
+    "update_subnet": handle_update_subnet,
     "list_images": handle_list_images,
     "get_image": handle_get_image,
     "list_categories": handle_list_categories,
