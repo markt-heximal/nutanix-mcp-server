@@ -1588,7 +1588,8 @@ async def handle_pe_add_dns_servers(client: NutanixClient, arguments: dict[str, 
     """Add DNS name servers to a Prism Element cluster."""
     pe_host = arguments["pe_host"]
     servers = arguments["servers"]
-    await client.pe_post(pe_host, "cluster/name_servers", body=servers)
+    # v2.0 manages name servers via the add_list/remove_list action sub-resources.
+    await client.pe_post(pe_host, "cluster/name_servers/add_list", body=servers)
     return {"status": "dns_servers_added", "servers": servers}
 
 
@@ -1596,7 +1597,7 @@ async def handle_pe_remove_dns_servers(client: NutanixClient, arguments: dict[st
     """Remove DNS name servers from a Prism Element cluster."""
     pe_host = arguments["pe_host"]
     servers = arguments["servers"]
-    await client.pe_delete(pe_host, "cluster/name_servers", body=servers)
+    await client.pe_post(pe_host, "cluster/name_servers/remove_list", body=servers)
     return {"status": "dns_servers_removed", "servers": servers}
 
 
@@ -1604,7 +1605,7 @@ async def handle_pe_add_ntp_servers(client: NutanixClient, arguments: dict[str, 
     """Add NTP time servers to a Prism Element cluster."""
     pe_host = arguments["pe_host"]
     servers = arguments["servers"]
-    await client.pe_post(pe_host, "cluster/ntp_servers", body=servers)
+    await client.pe_post(pe_host, "cluster/ntp_servers/add_list", body=servers)
     return {"status": "ntp_servers_added", "servers": servers}
 
 
@@ -1612,7 +1613,7 @@ async def handle_pe_remove_ntp_servers(client: NutanixClient, arguments: dict[st
     """Remove NTP time servers from a Prism Element cluster."""
     pe_host = arguments["pe_host"]
     servers = arguments["servers"]
-    await client.pe_delete(pe_host, "cluster/ntp_servers", body=servers)
+    await client.pe_post(pe_host, "cluster/ntp_servers/remove_list", body=servers)
     return {"status": "ntp_servers_removed", "servers": servers}
 
 

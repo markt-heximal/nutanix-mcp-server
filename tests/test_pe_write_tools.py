@@ -76,7 +76,7 @@ async def test_add_dns_servers(mock_client):
     )
     assert result["status"] == "dns_servers_added"
     call = mock_client.pe_post.call_args
-    assert call.args[1] == "cluster/name_servers"
+    assert call.args[1] == "cluster/name_servers/add_list"
     assert call.kwargs["body"] == ["8.8.8.8", "1.1.1.1"]
 
 
@@ -86,8 +86,8 @@ async def test_remove_dns_servers(mock_client):
         mock_client, {"pe_host": PE, "servers": ["8.8.8.8"]}
     )
     assert result["status"] == "dns_servers_removed"
-    call = mock_client.pe_delete.call_args
-    assert call.args[1] == "cluster/name_servers"
+    call = mock_client.pe_post.call_args
+    assert call.args[1] == "cluster/name_servers/remove_list"
     assert call.kwargs["body"] == ["8.8.8.8"]
 
 
@@ -95,7 +95,7 @@ async def test_remove_dns_servers(mock_client):
 async def test_add_ntp_servers(mock_client):
     await handle_pe_add_ntp_servers(mock_client, {"pe_host": PE, "servers": ["pool.ntp.org"]})
     call = mock_client.pe_post.call_args
-    assert call.args[1] == "cluster/ntp_servers"
+    assert call.args[1] == "cluster/ntp_servers/add_list"
     assert call.kwargs["body"] == ["pool.ntp.org"]
 
 
