@@ -341,6 +341,11 @@ async def config(identity: Identity = Depends(require_identity)) -> dict[str, An
         settings.allowed_pe_hosts[0] if settings.allowed_pe_hosts else settings.host
     )
     return {
+        # Prism Central is the primary data plane (clusters, VMs, hosts, alerts
+        # via the v4 APIs). It is null in pe_only deployments.
+        "prism_central_host": None if settings.pe_only else settings.host,
+        "prism_central_port": settings.port,
+        # Prism Element powers the pe_* tools (storage, health, data protection).
         "default_pe_host": default_pe_host,
         "allowed_pe_hosts": settings.allowed_pe_hosts,
         "pe_only": settings.pe_only,
