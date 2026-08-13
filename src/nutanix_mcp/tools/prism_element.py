@@ -593,6 +593,166 @@ PE_TOOLS: list[dict] = [
             "required": ["pe_host"],
         },
     },
+    # ─── Cluster services (write) ─────────────────────────────────────────────
+    {
+        "name": "pe_set_smtp_config",
+        "description": (
+            "Configure the SMTP relay on a Prism Element cluster (used for alert "
+            "emails). Sets server address, port, sender address, and security mode."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "pe_host": {"type": "string", "description": "Prism Element CVM IP or hostname."},
+                "address": {"type": "string", "description": "SMTP server address."},
+                "port": {"type": "integer", "description": "SMTP server port (e.g. 25, 465, 587)."},
+                "from_email_address": {"type": "string", "description": "Sender ('from') email address."},
+                "secure_mode": {
+                    "type": "string",
+                    "enum": ["NONE", "STARTTLS", "SSL"],
+                    "description": "Connection security mode. Default: NONE.",
+                },
+                "username": {"type": "string", "description": "Optional SMTP auth username."},
+                "password": {"type": "string", "description": "Optional SMTP auth password."},
+            },
+            "required": ["pe_host", "address", "port"],
+        },
+    },
+    {
+        "name": "pe_add_dns_servers",
+        "description": "Add one or more DNS name servers to a Prism Element cluster.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "pe_host": {"type": "string", "description": "Prism Element CVM IP or hostname."},
+                "servers": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "DNS server IPs to add, e.g. ['8.8.8.8', '1.1.1.1'].",
+                },
+            },
+            "required": ["pe_host", "servers"],
+        },
+    },
+    {
+        "name": "pe_remove_dns_servers",
+        "description": "Remove one or more DNS name servers from a Prism Element cluster.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "pe_host": {"type": "string", "description": "Prism Element CVM IP or hostname."},
+                "servers": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "DNS server IPs to remove.",
+                },
+            },
+            "required": ["pe_host", "servers"],
+        },
+    },
+    {
+        "name": "pe_add_ntp_servers",
+        "description": "Add one or more NTP time servers to a Prism Element cluster.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "pe_host": {"type": "string", "description": "Prism Element CVM IP or hostname."},
+                "servers": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "NTP server hostnames or IPs to add, e.g. ['pool.ntp.org'].",
+                },
+            },
+            "required": ["pe_host", "servers"],
+        },
+    },
+    {
+        "name": "pe_remove_ntp_servers",
+        "description": "Remove one or more NTP time servers from a Prism Element cluster.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "pe_host": {"type": "string", "description": "Prism Element CVM IP or hostname."},
+                "servers": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "NTP server hostnames or IPs to remove.",
+                },
+            },
+            "required": ["pe_host", "servers"],
+        },
+    },
+    # ─── Data protection (write) ──────────────────────────────────────────────
+    {
+        "name": "pe_create_protection_domain",
+        "description": (
+            "Create an (async DR) protection domain on a Prism Element cluster. "
+            "A protection domain groups VMs for snapshot scheduling and replication."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "pe_host": {"type": "string", "description": "Prism Element CVM IP or hostname."},
+                "name": {"type": "string", "description": "Protection domain name."},
+            },
+            "required": ["pe_host", "name"],
+        },
+    },
+    {
+        "name": "pe_protect_vms",
+        "description": (
+            "Add VMs to a protection domain on a Prism Element cluster so they are "
+            "included in its snapshot/replication schedule."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "pe_host": {"type": "string", "description": "Prism Element CVM IP or hostname."},
+                "pd_name": {"type": "string", "description": "Protection domain name."},
+                "vm_names": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Names of VMs to add to the protection domain.",
+                },
+            },
+            "required": ["pe_host", "pd_name", "vm_names"],
+        },
+    },
+    {
+        "name": "pe_create_pd_snapshot",
+        "description": (
+            "Take an out-of-band (manual) snapshot of a protection domain on a "
+            "Prism Element cluster, optionally with a retention period."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "pe_host": {"type": "string", "description": "Prism Element CVM IP or hostname."},
+                "pd_name": {"type": "string", "description": "Protection domain name."},
+                "retention_seconds": {
+                    "type": "integer",
+                    "description": "Optional retention time in seconds before the snapshot expires.",
+                },
+            },
+            "required": ["pe_host", "pd_name"],
+        },
+    },
+    {
+        "name": "pe_delete_protection_domain",
+        "description": (
+            "Delete a protection domain from a Prism Element cluster. Requires "
+            "confirm=true. The protection domain must have no protected VMs."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "pe_host": {"type": "string", "description": "Prism Element CVM IP or hostname."},
+                "pd_name": {"type": "string", "description": "Protection domain name to delete."},
+                "confirm": {"type": "boolean", "description": "Must be true to proceed."},
+            },
+            "required": ["pe_host", "pd_name"],
+        },
+    },
 ]
 
 
@@ -1402,6 +1562,112 @@ async def handle_pe_list_pd_replications(client: NutanixClient, arguments: dict[
     }
 
 
+# ─── Cluster services (write) handlers ────────────────────────────────────────
+
+
+async def handle_pe_set_smtp_config(client: NutanixClient, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Configure the SMTP relay on a Prism Element cluster."""
+    pe_host = arguments["pe_host"]
+    body: dict[str, Any] = {
+        "address": arguments["address"],
+        "port": arguments["port"],
+        "secure_mode": arguments.get("secure_mode", "NONE"),
+    }
+    if arguments.get("from_email_address"):
+        body["from_email_address"] = arguments["from_email_address"]
+    if arguments.get("username"):
+        body["username"] = arguments["username"]
+    if arguments.get("password"):
+        body["password"] = arguments["password"]
+
+    await client.pe_put(pe_host, "cluster/smtp", body=body)
+    return {"status": "smtp_config_updated", "address": arguments["address"]}
+
+
+async def handle_pe_add_dns_servers(client: NutanixClient, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Add DNS name servers to a Prism Element cluster."""
+    pe_host = arguments["pe_host"]
+    servers = arguments["servers"]
+    await client.pe_post(pe_host, "cluster/name_servers", body=servers)
+    return {"status": "dns_servers_added", "servers": servers}
+
+
+async def handle_pe_remove_dns_servers(client: NutanixClient, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Remove DNS name servers from a Prism Element cluster."""
+    pe_host = arguments["pe_host"]
+    servers = arguments["servers"]
+    await client.pe_delete(pe_host, "cluster/name_servers", body=servers)
+    return {"status": "dns_servers_removed", "servers": servers}
+
+
+async def handle_pe_add_ntp_servers(client: NutanixClient, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Add NTP time servers to a Prism Element cluster."""
+    pe_host = arguments["pe_host"]
+    servers = arguments["servers"]
+    await client.pe_post(pe_host, "cluster/ntp_servers", body=servers)
+    return {"status": "ntp_servers_added", "servers": servers}
+
+
+async def handle_pe_remove_ntp_servers(client: NutanixClient, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Remove NTP time servers from a Prism Element cluster."""
+    pe_host = arguments["pe_host"]
+    servers = arguments["servers"]
+    await client.pe_delete(pe_host, "cluster/ntp_servers", body=servers)
+    return {"status": "ntp_servers_removed", "servers": servers}
+
+
+# ─── Data protection (write) handlers ─────────────────────────────────────────
+
+
+async def handle_pe_create_protection_domain(client: NutanixClient, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Create a protection domain on a Prism Element cluster."""
+    pe_host = arguments["pe_host"]
+    name = arguments["name"]
+    await client.pe_post(pe_host, "protection_domains", body={"value": name})
+    return {"status": "protection_domain_created", "name": name}
+
+
+async def handle_pe_protect_vms(client: NutanixClient, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Add VMs to a protection domain on a Prism Element cluster."""
+    pe_host = arguments["pe_host"]
+    pd_name = arguments["pd_name"]
+    vm_names = arguments["vm_names"]
+    await client.pe_post(
+        pe_host,
+        f"protection_domains/{pd_name}/protect_vms",
+        body={"names": vm_names},
+    )
+    return {"status": "vms_protected", "pd_name": pd_name, "vm_names": vm_names}
+
+
+async def handle_pe_create_pd_snapshot(client: NutanixClient, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Take an out-of-band snapshot of a protection domain."""
+    pe_host = arguments["pe_host"]
+    pd_name = arguments["pd_name"]
+    body: dict[str, Any] = {}
+    if arguments.get("retention_seconds") is not None:
+        body["snapshot_retention_time_secs"] = arguments["retention_seconds"]
+    await client.pe_post(
+        pe_host,
+        f"protection_domains/{pd_name}/oob_schedules",
+        body=body,
+    )
+    return {"status": "pd_snapshot_initiated", "pd_name": pd_name}
+
+
+async def handle_pe_delete_protection_domain(client: NutanixClient, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Delete a protection domain from a Prism Element cluster (confirm-guarded)."""
+    pe_host = arguments["pe_host"]
+    pd_name = arguments["pd_name"]
+    if not arguments.get("confirm", False):
+        return {
+            "status": "error",
+            "message": "Deletion not confirmed. Set 'confirm: true' to proceed.",
+        }
+    await client.pe_delete(pe_host, f"protection_domains/{pd_name}")
+    return {"status": "protection_domain_deleted", "pd_name": pd_name}
+
+
 # ─── Handler Dispatch ─────────────────────────────────────────────────────────
 
 PE_HANDLERS: dict[str, Any] = {
@@ -1443,4 +1709,15 @@ PE_HANDLERS: dict[str, Any] = {
     "pe_get_metro_witness": handle_pe_get_metro_witness,
     "pe_list_dr_snapshots": handle_pe_list_dr_snapshots,
     "pe_list_pd_replications": handle_pe_list_pd_replications,
+    # Cluster services (write)
+    "pe_set_smtp_config": handle_pe_set_smtp_config,
+    "pe_add_dns_servers": handle_pe_add_dns_servers,
+    "pe_remove_dns_servers": handle_pe_remove_dns_servers,
+    "pe_add_ntp_servers": handle_pe_add_ntp_servers,
+    "pe_remove_ntp_servers": handle_pe_remove_ntp_servers,
+    # Data protection (write)
+    "pe_create_protection_domain": handle_pe_create_protection_domain,
+    "pe_protect_vms": handle_pe_protect_vms,
+    "pe_create_pd_snapshot": handle_pe_create_pd_snapshot,
+    "pe_delete_protection_domain": handle_pe_delete_protection_domain,
 }

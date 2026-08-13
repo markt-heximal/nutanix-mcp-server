@@ -432,6 +432,55 @@ class NutanixClient:
 
         return response.json()
 
+    async def _pe_write(
+        self,
+        method: str,
+        pe_host: str,
+        path: str,
+        body: Optional[Any] = None,
+        params: Optional[dict[str, str]] = None,
+    ) -> dict[str, Any]:
+        """Send a mutating (PUT/POST/DELETE) request to a Prism Element v2 API."""
+        client = await self._get_pe_client(pe_host)
+        try:
+            response = await client.request(method, f"/{path}", json=body, params=params)
+        except httpx.ConnectError as e:
+            raise NutanixAPIError(f"Connection failed to PE host {pe_host}", details=str(e))
+        except httpx.TimeoutException as e:
+            raise NutanixAPIError(
+                f"Request to PE {pe_host} timed out after {self.settings.timeout}s",
+                details=str(e),
+            )
+
+        if response.status_code >= 400:
+            self._handle_error(response)
+
+        # Some PE v2 mutations return 204/empty bodies.
+        if not response.content:
+            return {"status": "ok", "httpStatus": response.status_code}
+        try:
+            return response.json()
+        except ValueError:
+            return {"status": "ok", "httpStatus": response.status_code}
+
+    async def pe_put(
+        self, pe_host: str, path: str, body: Optional[Any] = None
+    ) -> dict[str, Any]:
+        """PUT request against a Prism Element v2 API."""
+        return await self._pe_write("PUT", pe_host, path, body=body)
+
+    async def pe_post(
+        self, pe_host: str, path: str, body: Optional[Any] = None
+    ) -> dict[str, Any]:
+        """POST request against a Prism Element v2 API."""
+        return await self._pe_write("POST", pe_host, path, body=body)
+
+    async def pe_delete(
+        self, pe_host: str, path: str, body: Optional[Any] = None
+    ) -> dict[str, Any]:
+        """DELETE request against a Prism Element v2 API."""
+        return await self._pe_write("DELETE", pe_host, path, body=body)
+
     async def pe_list(
         self,
         pe_host: str,
