@@ -169,6 +169,32 @@ CLUSTER_TOOLS: list[dict] = [
             "required": ["container_uuid"],
         },
     },
+    {
+        "name": "delete_storage_container",
+        "description": (
+            "Delete a storage container by UUID. Requires confirm=true to proceed. Uses "
+            "ETag-based concurrency control. Returns a task UUID. Fails if the container "
+            "still holds vdisks/VMs unless ignore_small_files is set."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "container_uuid": {
+                    "type": "string",
+                    "description": "The UUID (extId) of the storage container to delete.",
+                },
+                "confirm": {
+                    "type": "boolean",
+                    "description": "Must be true to proceed with deletion.",
+                },
+                "ignore_small_files": {
+                    "type": "boolean",
+                    "description": "Allow deletion even if the container holds small files. Default: false.",
+                },
+            },
+            "required": ["container_uuid"],
+        },
+    },
 ]
 
 # 1 GiB in bytes — capacity args are expressed in GiB for convenience.
@@ -368,6 +394,30 @@ async def handle_resize_storage_container(client: NutanixClient, arguments: dict
     return {"status": "storage_container_update_initiated", "taskExtId": task_id}
 
 
+async def handle_delete_storage_container(client: NutanixClient, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Delete a storage container using the official Nutanix SDK (confirm-guarded)."""
+    container_uuid = arguments["container_uuid"]
+    if not arguments.get("confirm", False):
+        return {
+            "status": "error",
+            "message": "Deletion not confirmed. Set 'confirm: true' to proceed with container deletion.",
+        }
+
+    sdk = client.sdk
+    get_response = await sdk.call(sdk.storage_container_api.get_storage_container_by_id, container_uuid)
+    etag = sdk.get_etag(get_response)
+
+    kwargs: dict[str, Any] = {"if_match": etag}
+    if arguments.get("ignore_small_files"):
+        kwargs["ignoreSmallFiles"] = True
+
+    response = await sdk.call(
+        sdk.storage_container_api.delete_storage_container_by_id, container_uuid, **kwargs
+    )
+    task_id = response.data.ext_id if response.data else None
+    return {"status": "storage_container_deletion_initiated", "taskExtId": task_id}
+
+
 # ─── Handler Dispatch ─────────────────────────────────────────────────────────
 
 CLUSTER_HANDLERS: dict[str, Any] = {
@@ -378,4 +428,5 @@ CLUSTER_HANDLERS: dict[str, Any] = {
     "list_storage_containers": handle_list_storage_containers,
     "create_storage_container": handle_create_storage_container,
     "resize_storage_container": handle_resize_storage_container,
+    "delete_storage_container": handle_delete_storage_container,
 }

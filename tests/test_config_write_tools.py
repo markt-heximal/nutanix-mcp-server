@@ -11,10 +11,12 @@ import pytest
 
 from nutanix_mcp.tools.cluster import (
     handle_create_storage_container,
+    handle_delete_storage_container,
     handle_resize_storage_container,
 )
 from nutanix_mcp.tools.networking import (
     handle_create_subnet,
+    handle_delete_subnet,
     handle_update_subnet,
 )
 
@@ -195,3 +197,56 @@ async def test_resize_storage_container_passes_etag(mock_client):
     update_call = mock_client.sdk.call.call_args_list[1]
     assert update_call.kwargs["if_match"] == "etag-1"
     assert update_call.args[1] == CONTAINER_UUID
+
+
+# ─── delete guards + ETag ─────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_delete_subnet_without_confirm(mock_client):
+    """delete_subnet refuses without confirm=True and makes no SDK call."""
+    result = await handle_delete_subnet(mock_client, {"subnet_uuid": SUBNET_UUID, "confirm": False})
+
+    assert result["status"] == "error"
+    assert "confirm" in result["message"].lower()
+    mock_client.sdk.call.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_delete_subnet_with_confirm(mock_client):
+    """delete_subnet fetches the ETag then deletes with if_match."""
+    mock_client.sdk.call.side_effect = [MagicMock(), _task_response("task-7")]
+
+    result = await handle_delete_subnet(mock_client, {"subnet_uuid": SUBNET_UUID, "confirm": True})
+
+    assert result["status"] == "subnet_deletion_initiated"
+    assert result["taskExtId"] == "task-7"
+    delete_call = mock_client.sdk.call.call_args_list[1]
+    assert delete_call.kwargs["if_match"] == "etag-1"
+    assert delete_call.args[1] == SUBNET_UUID
+
+
+@pytest.mark.asyncio
+async def test_delete_storage_container_without_confirm(mock_client):
+    """delete_storage_container refuses without confirm=True."""
+    result = await handle_delete_storage_container(
+        mock_client, {"container_uuid": CONTAINER_UUID, "confirm": False}
+    )
+
+    assert result["status"] == "error"
+    mock_client.sdk.call.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_delete_storage_container_with_confirm(mock_client):
+    """delete_storage_container fetches the ETag then deletes with if_match."""
+    mock_client.sdk.call.side_effect = [MagicMock(), _task_response("task-8")]
+
+    result = await handle_delete_storage_container(
+        mock_client, {"container_uuid": CONTAINER_UUID, "confirm": True, "ignore_small_files": True}
+    )
+
+    assert result["status"] == "storage_container_deletion_initiated"
+    delete_call = mock_client.sdk.call.call_args_list[1]
+    assert delete_call.kwargs["if_match"] == "etag-1"
+    assert delete_call.kwargs["ignoreSmallFiles"] is True

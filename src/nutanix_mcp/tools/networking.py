@@ -127,6 +127,27 @@ NETWORKING_TOOLS: list[dict] = [
         },
     },
     {
+        "name": "delete_subnet",
+        "description": (
+            "Delete a subnet by UUID. Requires confirm=true to proceed. Uses ETag-based "
+            "concurrency control. Returns a task UUID. Fails if VMs still use the subnet."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "subnet_uuid": {
+                    "type": "string",
+                    "description": "The UUID (extId) of the subnet to delete.",
+                },
+                "confirm": {
+                    "type": "boolean",
+                    "description": "Must be true to proceed with deletion.",
+                },
+            },
+            "required": ["subnet_uuid"],
+        },
+    },
+    {
         "name": "list_images",
         "description": (
             "List ALL disk images (ISOs, QCOW2) in the image library (auto-paginates internally). "
@@ -385,6 +406,23 @@ async def handle_update_subnet(client: NutanixClient, arguments: dict[str, Any])
     return {"status": "subnet_update_initiated", "taskExtId": task_id}
 
 
+async def handle_delete_subnet(client: NutanixClient, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Delete a subnet using the official Nutanix SDK (confirm-guarded)."""
+    subnet_uuid = arguments["subnet_uuid"]
+    if not arguments.get("confirm", False):
+        return {
+            "status": "error",
+            "message": "Deletion not confirmed. Set 'confirm: true' to proceed with subnet deletion.",
+        }
+
+    sdk = client.sdk
+    get_response = await sdk.call(sdk.subnet_api.get_subnet_by_id, subnet_uuid)
+    etag = sdk.get_etag(get_response)
+    response = await sdk.call(sdk.subnet_api.delete_subnet_by_id, subnet_uuid, if_match=etag)
+    task_id = response.data.ext_id if response.data else None
+    return {"status": "subnet_deletion_initiated", "taskExtId": task_id}
+
+
 async def handle_list_images(client: NutanixClient, arguments: dict[str, Any]) -> dict[str, Any]:
     """List images using official Nutanix SDK."""
     filter_expr = arguments.get("filter")
@@ -475,6 +513,7 @@ NETWORKING_HANDLERS: dict[str, Any] = {
     "get_subnet": handle_get_subnet,
     "create_subnet": handle_create_subnet,
     "update_subnet": handle_update_subnet,
+    "delete_subnet": handle_delete_subnet,
     "list_images": handle_list_images,
     "get_image": handle_get_image,
     "list_categories": handle_list_categories,
