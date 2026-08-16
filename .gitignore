@@ -7,6 +7,10 @@
 !.env.example
 !*.env.example
 
+# The globs above already cover .facade.env, .management.env and *.local.env.
+# users.json holds management-API credentials and matches none of them.
+users.json
+
 .venv/
 venv/
 env/

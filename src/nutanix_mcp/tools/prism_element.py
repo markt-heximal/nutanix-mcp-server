@@ -681,13 +681,28 @@ def _as_int(value: Any) -> int | None:
         return None
 
 
+def _container_erasure_coded(c: dict) -> Any:
+    """Normalize the erasure-coding flag across v2 field variants.
+
+    Some AOS builds expose a boolean ``erasure_coded``; others a string
+    ``erasure_code`` (e.g. "off"/"on"/"none").
+    """
+    if "erasure_coded" in c:
+        return c.get("erasure_coded")
+    code = c.get("erasure_code")
+    if isinstance(code, str):
+        return code.strip().lower() not in ("", "off", "none", "disabled")
+    return None
+
+
 async def handle_pe_list_containers(client: NutanixClient, arguments: dict[str, Any]) -> dict[str, Any]:
     """List storage containers from Prism Element v2 API.
 
-    The v2 resource is "storage_containers"; "containers" is a 404. Entity
-    fields are storage_container_uuid (not container_uuid) and erasure_code
-    (a string such as "off", not a boolean erasure_coded). There is no
-    storage_pool_uuid on this entity.
+    The v2 resource is ``storage_containers``; ``containers`` returns 404.
+    Entity fields are ``storage_container_uuid`` (not ``container_uuid``) and
+    ``erasure_code`` (a string such as "off", not a boolean ``erasure_coded``).
+    There is no ``storage_pool_uuid`` on this entity — verified against AOS
+    6.8.1, where the key is absent entirely.
     """
     pe_host = arguments["pe_host"]
     result = await client.pe_list(pe_host, "storage_containers")
@@ -698,13 +713,15 @@ async def handle_pe_list_containers(client: NutanixClient, arguments: dict[str, 
         "containers": [
             {
                 "name": c.get("name"),
-                "containerUuid": c.get("storage_container_uuid"),
+                "containerUuid": c.get("storage_container_uuid") or c.get("container_uuid") or c.get("id"),
                 "clusterUuid": c.get("cluster_uuid"),
                 "maxCapacityBytes": _as_int(c.get("max_capacity")),
                 "usedBytes": _as_int((c.get("usage_stats") or {}).get("storage.usage_bytes")),
                 "replicationFactor": c.get("replication_factor"),
                 "compressionEnabled": c.get("compression_enabled"),
+                # Raw value plus a normalised boolean: AOS reports this either way.
                 "erasureCode": c.get("erasure_code"),
+                "erasureCoded": _container_erasure_coded(c),
                 "onDiskDedup": c.get("on_disk_dedup"),
                 "markedForRemoval": c.get("marked_for_removal"),
             }
@@ -714,24 +731,31 @@ async def handle_pe_list_containers(client: NutanixClient, arguments: dict[str, 
 
 
 async def handle_pe_list_storage_pools(client: NutanixClient, arguments: dict[str, Any]) -> dict[str, Any]:
-    """List storage pools from Prism Element v1 API.
+    """List storage pools from Prism Element.
 
-    There is no v2.0 storage_pools resource (404) -- this lives on v1 only,
-    which returns camelCase fields (storagePoolUuid, usageStats) rather than
-    the snake_case used throughout v2.
+    Storage pools are only exposed on the PE v1 API
+    (``/api/nutanix/v1/storage_pools``); the v2.0 API returns 404 for this
+    resource. The v1 payload uses camelCase keys (``storagePoolUuid``,
+    ``usageStats``) rather than the snake_case used throughout v2; the
+    snake_case fallbacks below are kept for other AOS builds. It also returns
+    ``capacity`` and the usage stats as strings, hence ``_as_int``.
     """
     pe_host = arguments["pe_host"]
     result = await client.pe_v1_get(pe_host, "storage_pools")
     entities = result.get("entities", [])
+
+    def _usage_bytes(sp: dict) -> Any:
+        stats = sp.get("usageStats") or sp.get("usage_stats") or {}
+        return stats.get("storage.usage_bytes")
 
     return {
         "count": len(entities),
         "storagePools": [
             {
                 "name": sp.get("name"),
-                "uuid": sp.get("storagePoolUuid"),
+                "uuid": sp.get("storagePoolUuid") or sp.get("storage_pool_uuid"),
                 "capacityBytes": _as_int(sp.get("capacity")),
-                "usageBytes": _as_int((sp.get("usageStats") or {}).get("storage.usage_bytes")),
+                "usageBytes": _as_int(_usage_bytes(sp)),
                 "reservedCapacityBytes": _as_int(sp.get("reservedCapacity")),
                 "numDisks": len(sp.get("disks") or sp.get("diskUuids") or []),
                 "markedForRemoval": sp.get("markedForRemoval"),

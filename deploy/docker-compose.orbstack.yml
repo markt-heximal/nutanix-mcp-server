@@ -1,0 +1,51 @@
+# Nutanix management API for a mini running OrbStack.
+#
+# Why this is simpler than docker-compose.yml:
+#   OrbStack gives every container an automatic HTTPS domain with a *locally
+#   trusted* certificate (its root CA is installed in the macOS keychain). So we
+#   drop the Caddy TLS proxy entirely — OrbStack's built-in reverse proxy is the
+#   HTTPS edge. The API is reachable at https://${ORB_DOMAIN} on the Mac running
+#   OrbStack, no cert warnings.
+#
+# Setup:
+#   cp .env.example .env                                  # NUTANIX_* connection
+#   cp deploy/.management.env.example .management.env     # MGMT_* secrets (chmod 600)
+#   python scripts/mgmt_user.py alice admin > /tmp/rec && \
+#     mkdir -p deploy/secrets && $EDITOR deploy/secrets/users.json   # paste the record(s)
+#   # (optional) export ORB_DOMAIN=nutanix-api.orb.local
+#   docker compose -f deploy/docker-compose.orbstack.yml up -d --build
+#
+# Then set MGMT_CORS_ORIGINS in .management.env to your Lovable origin, and point
+# the app's VITE_API_BASE_URL at https://${ORB_DOMAIN}.
+#
+# Access model: SAME-MAC. *.orb.local resolves only on the Mac running OrbStack,
+# so use the Lovable app in a browser on this Mac. The API enables Private
+# Network Access (public Lovable origin -> private orb.local address), so the
+# browser's PNA preflight succeeds automatically.
+
+name: nutanix-mgmt
+
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.api
+    image: nutanix-mgmt-api
+    restart: unless-stopped
+    env_file:
+      - ../.env                # NUTANIX_HOST / USERNAME / PASSWORD / VERIFY_SSL / ...
+      - ../.management.env     # MGMT_JWT_SECRET / MGMT_CORS_ORIGINS / MGMT_TOKEN_TTL
+    environment:
+      MGMT_USERS_FILE: /run/secrets/users.json
+    volumes:
+      - ./secrets/users.json:/run/secrets/users.json:ro
+    labels:
+      # OrbStack serves the container at https://<this domain> with a trusted cert.
+      dev.orbstack.domains: "${ORB_DOMAIN:-nutanix-api.orb.local}"
+      # Be explicit about which container port the domain proxies to.
+      dev.orbstack.http-port: "9780"
+    # Loopback bind for local curl / debugging only. OrbStack's domain proxy
+    # (https://${ORB_DOMAIN}) is the path the browser uses; this is not published
+    # beyond the Mac.
+    ports:
+      - "127.0.0.1:9780:9780"
