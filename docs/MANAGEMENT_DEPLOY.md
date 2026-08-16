@@ -110,3 +110,78 @@ launchctl kickstart -k gui/$(id -u)/com.heximal.nutanix-mgmt
 ```
 
 Rotating `MGMT_JWT_SECRET` invalidates all active sessions (everyone re-logs in).
+
+## The live deployment on ai-factory-mini
+
+Verified 2026-08-16. This is the actual running setup, as distinct from the
+generic instructions above.
+
+| Thing | Value |
+|---|---|
+| Checkout | `/Users/markt/nutanix-mcp-server` (**not** `/Users/SHARED/…`) |
+| Compose file | `deploy/docker-compose.orbstack.yml`, service `api` |
+| Container | `nutanix-mgmt-api-1`, listening on `127.0.0.1:9780` |
+| Published via | the shared `v0-gateway` Caddy on `/ntx/*` — see [GATEWAY.md](GATEWAY.md) |
+| Env | `.env` (`NUTANIX_*`) + `.management.env` (`MGMT_*`), both gitignored |
+| Users | `deploy/secrets/users.json`, mounted at `/run/secrets/users.json` |
+
+The launchd unit in `deploy/` is an **alternative** to this, not a description of
+it. Do not load both — they would contend for `127.0.0.1:9780`.
+
+### The `.env` sync trap
+
+The mini's `.env` is a **separate copy** and does not sync from anywhere. After
+any Prism Central/Element address or credential change, update it or the console
+breaks in a way that looks like a frontend bug: the gateway, JWT and CORS all
+keep working and `/api/tools` still returns 200, but every
+`POST /api/tools/{name}` that touches PC returns 502 with `MaxRetryError` or a
+30s timeout.
+
+If that happens, check `NUTANIX_HOST` in the container first:
+
+```bash
+docker exec nutanix-mgmt-api-1 env | grep -E '^NUTANIX_(HOST|ALLOWED_PE_HOSTS)='
+```
+
+### Rebuilding the image safely
+
+```bash
+# 1. Pin a rollback FIRST — a rebuild overwrites :latest.
+docker tag nutanix-mgmt-api:latest nutanix-mgmt-api:rollback-$(date +%Y%m%d)
+
+# 2. Move the checkout to the commit you want to ship.
+cd /Users/markt/nutanix-mcp-server
+git fetch origin && git switch main && git merge --ff-only origin/main
+
+# 3. Build ALONE — never `up --build`, so a failed build cannot take the
+#    running service down.
+docker compose -f deploy/docker-compose.orbstack.yml build api
+
+# 4. Verify the new image BEFORE deploying it.
+docker run --rm --entrypoint sh nutanix-mgmt-api:latest \
+  -c 'wc -l < /app/src/nutanix_mcp/tools/prism_element.py'
+
+# 5. Deploy, then verify.
+docker compose -f deploy/docker-compose.orbstack.yml up -d --force-recreate api
+docker exec nutanix-mgmt-api-1 /app/.venv/bin/python \
+  -c 'from nutanix_mcp.tools import get_all_tools; print(len(get_all_tools()))'
+```
+
+Rollback: `docker tag nutanix-mgmt-api:rollback-<date> nutanix-mgmt-api:latest`
+then re-run step 5.
+
+`.env`, `.management.env` and `deploy/secrets/users.json` are gitignored and
+survive a branch switch untouched.
+
+Two gotchas worth knowing:
+
+- Use the container's own interpreter, **`/app/.venv/bin/python`**. The
+  container's bare `python3` cannot import `nutanix_mcp`.
+- Over **non-interactive** SSH, macOS hands out a minimal `PATH` that omits both
+  the OrbStack `docker` CLI and `/usr/local/bin` (the docker credential
+  helpers), so builds fail with
+  `error getting credentials — exec: "docker-credential-noop": executable file
+  not found`. The binary is not missing; it is just not on `PATH`. Fix with
+  `export PATH=/usr/local/bin:$HOME/.orbstack/bin:$PATH`, or permanently in
+  `~/.zshenv` (done on the mini). Do **not** "fix" `credsStore` in
+  `~/.docker/config.json` — that setting is deliberate and correct.

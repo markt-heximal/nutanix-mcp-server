@@ -6,6 +6,8 @@
 > Callers need **both** the gateway `X-API-Key: gwk_…` *and* the app's JWT bearer.
 > Login users are created with `scripts/mgmt_user.py` (`users.json`); allowed browser
 > origins live in `.management.env` (`MGMT_CORS_ORIGINS`).
+> For the backend itself — checkout paths, the `.env` sync trap, and the safe rebuild
+> sequence — see [MANAGEMENT_DEPLOY.md](MANAGEMENT_DEPLOY.md#the-live-deployment-on-ai-factory-mini).
 
 This is the shared reference for the single tailnet HTTPS gateway that fronts several
 projects (Arista, Nutanix, LucidLink, the cognitum V0/seed fleet). A copy of this file
