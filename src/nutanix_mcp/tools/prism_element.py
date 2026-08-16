@@ -6,7 +6,7 @@ which are discovered via Prism Central's cluster list.
 
 from typing import Any
 
-from nutanix_mcp.client import NutanixClient
+from nutanix_mcp.client import NutanixAPIError, NutanixClient
 
 # ─── Tool Definitions ─────────────────────────────────────────────────────────
 
@@ -476,8 +476,9 @@ PE_TOOLS: list[dict] = [
     {
         "name": "pe_get_cluster_health",
         "description": (
-            "Get cluster data resiliency and health status. "
-            "Returns domain fault tolerance status, rebuild capacity, and overall health."
+            "Get cluster data resiliency and fault tolerance status. "
+            "Returns per-domain (NODE, RACKABLE_UNIT, RACK, DISK) fault tolerance: how many "
+            "failures each component can tolerate, and an explanatory message when it cannot."
         ),
         "inputSchema": {
             "type": "object",
@@ -665,6 +666,21 @@ async def handle_pe_list_hosts(client: NutanixClient, arguments: dict[str, Any])
     }
 
 
+def _as_int(value: Any) -> int | None:
+    """Normalise a Prism numeric stat to int.
+
+    Prism returns several usage/capacity stats as strings ("241860689920")
+    while sibling fields on the same entity are ints, so callers otherwise get
+    inconsistent types for the same kind of value.
+    """
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _container_erasure_coded(c: dict) -> Any:
     """Normalize the erasure-coding flag across v2 field variants.
 
@@ -682,8 +698,11 @@ def _container_erasure_coded(c: dict) -> Any:
 async def handle_pe_list_containers(client: NutanixClient, arguments: dict[str, Any]) -> dict[str, Any]:
     """List storage containers from Prism Element v2 API.
 
-    The v2 resource is ``storage_containers`` (``containers`` returns 404),
-    and its UUID field is ``storage_container_uuid``.
+    The v2 resource is ``storage_containers``; ``containers`` returns 404.
+    Entity fields are ``storage_container_uuid`` (not ``container_uuid``) and
+    ``erasure_code`` (a string such as "off", not a boolean ``erasure_coded``).
+    There is no ``storage_pool_uuid`` on this entity — verified against AOS
+    6.8.1, where the key is absent entirely.
     """
     pe_host = arguments["pe_host"]
     result = await client.pe_list(pe_host, "storage_containers")
@@ -695,11 +714,16 @@ async def handle_pe_list_containers(client: NutanixClient, arguments: dict[str, 
             {
                 "name": c.get("name"),
                 "containerUuid": c.get("storage_container_uuid") or c.get("container_uuid") or c.get("id"),
-                "storagePoolUuid": c.get("storage_pool_uuid"),
-                "maxCapacityBytes": c.get("max_capacity"),
+                "clusterUuid": c.get("cluster_uuid"),
+                "maxCapacityBytes": _as_int(c.get("max_capacity")),
+                "usedBytes": _as_int((c.get("usage_stats") or {}).get("storage.usage_bytes")),
                 "replicationFactor": c.get("replication_factor"),
                 "compressionEnabled": c.get("compression_enabled"),
+                # Raw value plus a normalised boolean: AOS reports this either way.
+                "erasureCode": c.get("erasure_code"),
                 "erasureCoded": _container_erasure_coded(c),
+                "onDiskDedup": c.get("on_disk_dedup"),
+                "markedForRemoval": c.get("marked_for_removal"),
             }
             for c in entities
         ],
@@ -712,7 +736,9 @@ async def handle_pe_list_storage_pools(client: NutanixClient, arguments: dict[st
     Storage pools are only exposed on the PE v1 API
     (``/api/nutanix/v1/storage_pools``); the v2.0 API returns 404 for this
     resource. The v1 payload uses camelCase keys (``storagePoolUuid``,
-    ``usageStats``); we fall back to the v2 snake_case names for safety.
+    ``usageStats``) rather than the snake_case used throughout v2; the
+    snake_case fallbacks below are kept for other AOS builds. It also returns
+    ``capacity`` and the usage stats as strings, hence ``_as_int``.
     """
     pe_host = arguments["pe_host"]
     result = await client.pe_v1_get(pe_host, "storage_pools")
@@ -728,9 +754,11 @@ async def handle_pe_list_storage_pools(client: NutanixClient, arguments: dict[st
             {
                 "name": sp.get("name"),
                 "uuid": sp.get("storagePoolUuid") or sp.get("storage_pool_uuid"),
-                "capacityBytes": sp.get("capacity"),
-                "usageBytes": _usage_bytes(sp),
-                "numDisks": len(sp.get("disks", [])),
+                "capacityBytes": _as_int(sp.get("capacity")),
+                "usageBytes": _as_int(_usage_bytes(sp)),
+                "reservedCapacityBytes": _as_int(sp.get("reservedCapacity")),
+                "numDisks": len(sp.get("disks") or sp.get("diskUuids") or []),
+                "markedForRemoval": sp.get("markedForRemoval"),
             }
             for sp in entities
         ],
@@ -912,24 +940,30 @@ async def handle_pe_get_snmp_config(client: NutanixClient, arguments: dict[str, 
 
 
 async def handle_pe_get_syslog_config(client: NutanixClient, arguments: dict[str, Any]) -> dict[str, Any]:
-    """Get remote syslog server configuration from Prism Element v2 API."""
-    pe_host = arguments["pe_host"]
-    result = await client.pe_get(pe_host, "remote_syslog_servers")
-    entities = result.get("entities", [])
+    """Get remote syslog server configuration from Prism Element.
 
-    return {
-        "count": len(entities),
-        "servers": [
-            {
-                "serverName": s.get("server_name"),
-                "ipAddress": s.get("ip_address"),
-                "port": s.get("port"),
-                "networkProtocol": s.get("network_protocol"),
-                "modules": s.get("module_list", []),
-            }
-            for s in entities
-        ],
-    }
+    There is no v1 or v2 route for this on AOS 6.8.1 — every documented
+    remote_syslog_servers / rsyslog_configs path returns 404. The v3 groups
+    API is the only surface that knows the entity, and it is what the Prism
+    UI itself queries.
+    """
+    pe_host = arguments["pe_host"]
+    result = await client.pe_v3_groups(pe_host, "remote_syslog_server")
+
+    servers: list[dict[str, Any]] = []
+    for group in result.get("group_results") or []:
+        for entity in group.get("entity_results") or []:
+            # Each attribute arrives as {"name": ..., "values": [{"values": [v]}]}.
+            record: dict[str, Any] = {"entityId": entity.get("entity_id")}
+            for field in entity.get("data") or []:
+                values = field.get("values") or []
+                flat = values[0].get("values") if values else None
+                if isinstance(flat, list) and len(flat) == 1:
+                    flat = flat[0]
+                record[field.get("name")] = flat
+            servers.append(record)
+
+    return {"count": len(servers), "servers": servers}
 
 
 async def handle_pe_get_alert_email_config(client: NutanixClient, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -959,16 +993,30 @@ async def handle_pe_get_nfs_whitelists(client: NutanixClient, arguments: dict[st
 
 
 async def handle_pe_get_licensing_info(client: NutanixClient, arguments: dict[str, Any]) -> dict[str, Any]:
-    """Get licensing information from Prism Element v1 API."""
+    """Get licensing information from Prism Element v1 API.
+
+    The payload nests everything under "licenseDTO"; reading the top level
+    yields all-None. Enabled features come from allowanceMap, a dict of
+    feature key -> {displayName, boolValue: {boolValue: bool}}.
+    """
     pe_host = arguments["pe_host"]
     result = await client.pe_v1_get(pe_host, "license")
+    dto = result.get("licenseDTO") or {}
+
+    enabled = []
+    for key, allowance in (dto.get("allowanceMap") or {}).items():
+        if not isinstance(allowance, dict):
+            continue
+        inner = allowance.get("boolValue") or {}
+        if inner.get("boolValue") is True:
+            enabled.append(allowance.get("displayName") or key)
 
     return {
-        "category": result.get("category"),
-        "licenseType": result.get("license_type"),
-        "expiryDate": result.get("expiry_date"),
-        "clusterUuid": result.get("cluster_uuid"),
-        "enabledFeatures": result.get("enabled_feature_list", []),
+        "category": dto.get("category"),
+        "subCategory": dto.get("subCategory"),
+        "licenseClass": dto.get("licenseClass"),
+        "clusterExpiryUsecs": dto.get("clusterExpiryUsecs"),
+        "enabledFeatures": sorted(enabled),
     }
 
 
@@ -1083,7 +1131,9 @@ async def handle_pe_get_host_disks(client: NutanixClient, arguments: dict[str, A
     pe_host = arguments["pe_host"]
     host_uuid = arguments["host_uuid"]
 
-    result = await client.pe_get(pe_host, f"hosts/{host_uuid}/host_disks")
+    # There is no hosts/{uuid}/host_disks subresource on AOS 6.8.1 — it 404s.
+    # The disks collection filtered by host_ids is the route that works.
+    result = await client.pe_get(pe_host, "disks/", params={"host_ids": host_uuid})
     entities = result.get("entities", [])
 
     return {
@@ -1114,8 +1164,9 @@ async def handle_pe_get_host_nics(client: NutanixClient, arguments: dict[str, An
     pe_host = arguments["pe_host"]
     host_uuid = arguments["host_uuid"]
 
+    # This endpoint returns a bare JSON list, not an {"entities": [...]} envelope.
     result = await client.pe_get(pe_host, f"hosts/{host_uuid}/host_nics")
-    entities = result.get("entities", [])
+    entities = result if isinstance(result, list) else result.get("entities", [])
 
     return {
         "hostUuid": host_uuid,
@@ -1125,12 +1176,13 @@ async def handle_pe_get_host_nics(client: NutanixClient, arguments: dict[str, An
                 "name": n.get("name"),
                 "uuid": n.get("uuid"),
                 "macAddress": n.get("mac_address"),
-                "ipAddress": n.get("ip_address"),
+                "ipv4Addresses": n.get("ipv4_addresses") or [],
+                "ipv6Addresses": n.get("ipv6_addresses") or [],
                 "linkSpeedMbps": n.get("link_speed_in_kbps", 0) // 1000 if n.get("link_speed_in_kbps") else None,
                 "mtu": n.get("mtu_in_bytes"),
-                "interfaceStatus": n.get("interface_status"),
+                "interfaceStatus": n.get("status"),
                 "dhcpEnabled": n.get("dhcp_enabled"),
-                "switchManagementAddress": n.get("switch_management_address"),
+                "switchManagementAddress": n.get("switch_management_ip"),
                 "switchPortId": n.get("switch_port_id"),
                 "switchVlanId": n.get("switch_vlan_id"),
             }
@@ -1230,27 +1282,50 @@ async def handle_pe_get_cluster_health(client: NutanixClient, arguments: dict[st
     pe_host = arguments["pe_host"]
     result = await client.pe_get(pe_host, "cluster/domain_fault_tolerance_status")
 
-    domain_statuses = result.get("domain_fault_tolerance_status", result)
-    # Result may be a dict or directly contain the tolerance statuses
-    if isinstance(domain_statuses, list):
-        return {
-            "faultToleranceStatus": [
+    # The endpoint returns a bare list of per-domain entries; some AOS versions
+    # wrap it in a dict. Accept both rather than assuming a mapping.
+    if isinstance(result, dict):
+        domain_statuses = result.get("domain_fault_tolerance_status", result)
+    else:
+        domain_statuses = result
+
+    if not isinstance(domain_statuses, list):
+        return {"faultToleranceStatus": domain_statuses}
+
+    domains = []
+    for status in domain_statuses:
+        components = []
+        for name, component in (status.get("component_fault_tolerance_status") or {}).items():
+            if not isinstance(component, dict):
+                continue
+            # "details" is null for healthy components.
+            details = component.get("details") or {}
+            components.append(
                 {
-                    "domainType": s.get("domain_type") or s.get("type"),
-                    "currentTolerance": s.get("component_fault_tolerance_status", {}).get(
-                        "static_configuration", {}
-                    ).get("current_max_fault_tolerance"),
-                    "desiredTolerance": s.get("component_fault_tolerance_status", {}).get(
-                        "static_configuration", {}
-                    ).get("desired_max_fault_tolerance"),
-                    "rebuildCapacity": s.get("component_fault_tolerance_status", {}).get(
-                        "dynamic_configuration", {}
-                    ).get("can_rebuild"),
+                    "componentType": component.get("component_type") or name,
+                    "failuresTolerable": component.get("number_of_failures_tolerable"),
+                    "message": details.get("message"),
+                    "underComputation": component.get("under_computation"),
+                    "lastUpdatedTimestamp": component.get("last_updated_time_in_usecs"),
                 }
-                for s in domain_statuses
-            ],
-        }
-    return {"faultToleranceStatus": domain_statuses}
+            )
+        components.sort(key=lambda c: c["componentType"] or "")
+
+        tolerable = [
+            c["failuresTolerable"] for c in components if isinstance(c["failuresTolerable"], int)
+        ]
+        domains.append(
+            {
+                "domainType": status.get("domain_type") or status.get("type"),
+                # A domain is only as resilient as its weakest component.
+                "minFailuresTolerable": min(tolerable) if tolerable else None,
+                "underReplicatedDataBytes": status.get("cluster_under_replicated_data_bytes"),
+                "nonFaultTolerantEntries": status.get("cluster_non_fault_tolerant_entries"),
+                "components": components,
+            }
+        )
+
+    return {"count": len(domains), "faultToleranceStatus": domains}
 
 
 async def handle_pe_list_health_checks(client: NutanixClient, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -1337,7 +1412,14 @@ async def handle_pe_list_networks(client: NutanixClient, arguments: dict[str, An
 async def handle_pe_get_metro_witness(client: NutanixClient, arguments: dict[str, Any]) -> dict[str, Any]:
     """Get Metro Availability witness server configuration from Prism Element v2 API."""
     pe_host = arguments["pe_host"]
-    result = await client.pe_get(pe_host, "cluster/metro_witness")
+    try:
+        result = await client.pe_get(pe_host, "cluster/metro_witness")
+    except NutanixAPIError as e:
+        # A cluster with no metro availability configured answers HTTP 412
+        # rather than an empty body. That is "not configured", not a failure.
+        if e.status_code == 412:
+            return {"configured": False, "witness": None}
+        raise
 
     # May return a witness object or empty dict if not configured
     if not result or (isinstance(result, dict) and not result.get("witness_address")):

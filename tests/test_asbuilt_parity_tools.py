@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from nutanix_mcp.client import NutanixAPIError
 from nutanix_mcp.tools.prism_element import (
     handle_pe_get_metro_witness,
     handle_pe_list_dr_snapshots,
@@ -124,6 +125,30 @@ async def test_get_metro_witness_not_configured(mock_client):
 
     assert result["configured"] is False
     assert result["witness"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_metro_witness_precondition_failed(mock_client):
+    """A cluster without metro availability answers HTTP 412, not an empty body.
+
+    Observed on AOS 6.8.1. That is the API saying "not configured", so it must
+    surface as a clean answer rather than a raised error.
+    """
+    mock_client.pe_get.side_effect = NutanixAPIError("API request failed (HTTP 412)", status_code=412)
+
+    result = await handle_pe_get_metro_witness(mock_client, {"pe_host": "10.0.0.1"})
+
+    assert result["configured"] is False
+    assert result["witness"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_metro_witness_other_errors_propagate(mock_client):
+    """Only 412 means "not configured" — real failures must still raise."""
+    mock_client.pe_get.side_effect = NutanixAPIError("boom", status_code=500)
+
+    with pytest.raises(NutanixAPIError):
+        await handle_pe_get_metro_witness(mock_client, {"pe_host": "10.0.0.1"})
 
 
 @pytest.mark.asyncio

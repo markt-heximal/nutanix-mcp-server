@@ -16,49 +16,119 @@ def mock_client():
     return client
 
 
+# Captured verbatim from a live AOS 6.8.1 cluster. The endpoint returns a BARE
+# LIST, and each component map is keyed by UPPERCASE component name. The previous
+# fixture invented a dict wrapper with lowercase "static_configuration" keys, so
+# the suite passed green while every real call raised
+# AttributeError: 'list' object has no attribute 'get'.
+LIVE_FAULT_TOLERANCE_RESPONSE = [
+    {
+        "domain_type": "NODE",
+        "component_fault_tolerance_status": {
+            "STATIC_CONFIGURATION": {
+                "component_type": "STATIC_CONFIGURATION",
+                "number_of_failures_tolerable": 0,
+                "details": {
+                    "message": "Not enough nodes (hosts) in the cluster",
+                    "attributes": {},
+                },
+                "under_computation": False,
+                "last_updated_time_in_usecs": 1784023938000000,
+            },
+            "FREE_SPACE": {
+                "component_type": "FREE_SPACE",
+                "number_of_failures_tolerable": 0,
+                "details": {
+                    "message": "Cluster does not have enough capacity to tolerate a node failure",
+                    "attributes": {},
+                },
+                "under_computation": False,
+                "last_updated_time_in_usecs": 1786893399000000,
+            },
+        },
+        "cluster_under_replicated_data_bytes": 0,
+        "cluster_non_fault_tolerant_entries": 0,
+    },
+    {
+        "domain_type": "DISK",
+        "component_fault_tolerance_status": {
+            "EXTENT_GROUPS": {
+                "component_type": "EXTENT_GROUPS",
+                "number_of_failures_tolerable": 1,
+                # Healthy components report details as null.
+                "details": None,
+                "under_computation": False,
+                "last_updated_time_in_usecs": 1786890305000000,
+            },
+            "METADATA": {
+                "component_type": "METADATA",
+                "number_of_failures_tolerable": 2,
+                "details": None,
+                "under_computation": False,
+                "last_updated_time_in_usecs": 1784023960000000,
+            },
+        },
+        "cluster_under_replicated_data_bytes": 0,
+        "cluster_non_fault_tolerant_entries": 0,
+    },
+]
+
+
 @pytest.mark.asyncio
-async def test_get_cluster_health(mock_client):
-    """Test retrieving cluster health / fault tolerance status."""
+async def test_get_cluster_health_bare_list(mock_client):
+    """The v2 endpoint returns a bare list — this must not raise."""
+    mock_client.pe_get.return_value = LIVE_FAULT_TOLERANCE_RESPONSE
+
+    result = await handle_pe_get_cluster_health(mock_client, {"pe_host": "10.0.0.1"})
+
+    assert result["count"] == 2
+    assert len(result["faultToleranceStatus"]) == 2
+
+    node = result["faultToleranceStatus"][0]
+    assert node["domainType"] == "NODE"
+    assert node["minFailuresTolerable"] == 0
+    assert node["underReplicatedDataBytes"] == 0
+    assert node["nonFaultTolerantEntries"] == 0
+    # Components are sorted by type: FREE_SPACE before STATIC_CONFIGURATION.
+    assert [c["componentType"] for c in node["components"]] == [
+        "FREE_SPACE",
+        "STATIC_CONFIGURATION",
+    ]
+    assert node["components"][1]["message"] == "Not enough nodes (hosts) in the cluster"
+    assert node["components"][1]["underComputation"] is False
+
+    disk = result["faultToleranceStatus"][1]
+    assert disk["domainType"] == "DISK"
+    # Weakest component wins: EXTENT_GROUPS tolerates 1, METADATA tolerates 2.
+    assert disk["minFailuresTolerable"] == 1
+    # details=None must degrade to a null message, not raise.
+    assert all(c["message"] is None for c in disk["components"])
+
+    mock_client.pe_get.assert_called_once_with("10.0.0.1", "cluster/domain_fault_tolerance_status")
+
+
+@pytest.mark.asyncio
+async def test_get_cluster_health_dict_wrapped(mock_client):
+    """Some AOS versions wrap the list in a dict — both shapes must work."""
     mock_client.pe_get.return_value = {
-        "domain_fault_tolerance_status": [
-            {
-                "domain_type": "NODE",
-                "component_fault_tolerance_status": {
-                    "static_configuration": {
-                        "current_max_fault_tolerance": 1,
-                        "desired_max_fault_tolerance": 1,
-                    },
-                    "dynamic_configuration": {
-                        "can_rebuild": True,
-                    },
-                },
-            },
-            {
-                "domain_type": "DISK",
-                "component_fault_tolerance_status": {
-                    "static_configuration": {
-                        "current_max_fault_tolerance": 2,
-                        "desired_max_fault_tolerance": 2,
-                    },
-                    "dynamic_configuration": {
-                        "can_rebuild": True,
-                    },
-                },
-            },
-        ]
+        "domain_fault_tolerance_status": LIVE_FAULT_TOLERANCE_RESPONSE
     }
 
     result = await handle_pe_get_cluster_health(mock_client, {"pe_host": "10.0.0.1"})
 
-    assert len(result["faultToleranceStatus"]) == 2
-    node_status = result["faultToleranceStatus"][0]
-    assert node_status["domainType"] == "NODE"
-    assert node_status["currentTolerance"] == 1
-    assert node_status["rebuildCapacity"] is True
-    disk_status = result["faultToleranceStatus"][1]
-    assert disk_status["domainType"] == "DISK"
-    assert disk_status["currentTolerance"] == 2
-    mock_client.pe_get.assert_called_once_with("10.0.0.1", "cluster/domain_fault_tolerance_status")
+    assert result["count"] == 2
+    assert result["faultToleranceStatus"][0]["domainType"] == "NODE"
+    assert result["faultToleranceStatus"][1]["minFailuresTolerable"] == 1
+
+
+@pytest.mark.asyncio
+async def test_get_cluster_health_empty(mock_client):
+    """An empty list is a valid response, not an error."""
+    mock_client.pe_get.return_value = []
+
+    result = await handle_pe_get_cluster_health(mock_client, {"pe_host": "10.0.0.1"})
+
+    assert result == {"count": 0, "faultToleranceStatus": []}
 
 
 @pytest.mark.asyncio
