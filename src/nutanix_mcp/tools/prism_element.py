@@ -476,8 +476,9 @@ PE_TOOLS: list[dict] = [
     {
         "name": "pe_get_cluster_health",
         "description": (
-            "Get cluster data resiliency and health status. "
-            "Returns domain fault tolerance status, rebuild capacity, and overall health."
+            "Get cluster data resiliency and fault tolerance status. "
+            "Returns per-domain (NODE, RACKABLE_UNIT, RACK, DISK) fault tolerance: how many "
+            "failures each component can tolerate, and an explanatory message when it cannot."
         ),
         "inputSchema": {
             "type": "object",
@@ -1202,27 +1203,50 @@ async def handle_pe_get_cluster_health(client: NutanixClient, arguments: dict[st
     pe_host = arguments["pe_host"]
     result = await client.pe_get(pe_host, "cluster/domain_fault_tolerance_status")
 
-    domain_statuses = result.get("domain_fault_tolerance_status", result)
-    # Result may be a dict or directly contain the tolerance statuses
-    if isinstance(domain_statuses, list):
-        return {
-            "faultToleranceStatus": [
+    # The endpoint returns a bare list of per-domain entries; some AOS versions
+    # wrap it in a dict. Accept both rather than assuming a mapping.
+    if isinstance(result, dict):
+        domain_statuses = result.get("domain_fault_tolerance_status", result)
+    else:
+        domain_statuses = result
+
+    if not isinstance(domain_statuses, list):
+        return {"faultToleranceStatus": domain_statuses}
+
+    domains = []
+    for status in domain_statuses:
+        components = []
+        for name, component in (status.get("component_fault_tolerance_status") or {}).items():
+            if not isinstance(component, dict):
+                continue
+            # "details" is null for healthy components.
+            details = component.get("details") or {}
+            components.append(
                 {
-                    "domainType": s.get("domain_type") or s.get("type"),
-                    "currentTolerance": s.get("component_fault_tolerance_status", {}).get(
-                        "static_configuration", {}
-                    ).get("current_max_fault_tolerance"),
-                    "desiredTolerance": s.get("component_fault_tolerance_status", {}).get(
-                        "static_configuration", {}
-                    ).get("desired_max_fault_tolerance"),
-                    "rebuildCapacity": s.get("component_fault_tolerance_status", {}).get(
-                        "dynamic_configuration", {}
-                    ).get("can_rebuild"),
+                    "componentType": component.get("component_type") or name,
+                    "failuresTolerable": component.get("number_of_failures_tolerable"),
+                    "message": details.get("message"),
+                    "underComputation": component.get("under_computation"),
+                    "lastUpdatedTimestamp": component.get("last_updated_time_in_usecs"),
                 }
-                for s in domain_statuses
-            ],
-        }
-    return {"faultToleranceStatus": domain_statuses}
+            )
+        components.sort(key=lambda c: c["componentType"] or "")
+
+        tolerable = [
+            c["failuresTolerable"] for c in components if isinstance(c["failuresTolerable"], int)
+        ]
+        domains.append(
+            {
+                "domainType": status.get("domain_type") or status.get("type"),
+                # A domain is only as resilient as its weakest component.
+                "minFailuresTolerable": min(tolerable) if tolerable else None,
+                "underReplicatedDataBytes": status.get("cluster_under_replicated_data_bytes"),
+                "nonFaultTolerantEntries": status.get("cluster_non_fault_tolerant_entries"),
+                "components": components,
+            }
+        )
+
+    return {"count": len(domains), "faultToleranceStatus": domains}
 
 
 async def handle_pe_list_health_checks(client: NutanixClient, arguments: dict[str, Any]) -> dict[str, Any]:
