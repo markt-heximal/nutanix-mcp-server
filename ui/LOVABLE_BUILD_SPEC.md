@@ -3,7 +3,7 @@
 This is the brief to build the UI in Lovable. **Section 1 is a prompt you paste
 into a new Lovable project.** The rest is reference so follow-up messages stay
 consistent. Pair it with `ui/API_REFERENCE.md` (exact endpoints) and
-`ui/tool-catalog.json` (all 65 tools + schemas).
+`ui/tool-catalog.json` (all 71 tools + schemas).
 
 The app is a **pure frontend**. It talks to the management API you deploy on the
 AI factory mini (`management_api.py`) over HTTPS with a JWT. It has **no database

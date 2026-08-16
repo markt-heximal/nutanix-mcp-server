@@ -7,7 +7,7 @@ An MCP (Model Context Protocol) server that exposes Nutanix Prism Central and Pr
 
 ## Features
 
-- **65 tools** — Full coverage of Prism Central v4 and Prism Element v2 APIs
+- **71 tools** — Full coverage of Prism Central v4 and Prism Element v2 APIs
 - **Prism Central (v4 API)** — VM lifecycle, snapshots, clusters, hosts, networking, categories, alerts, tasks
 - **Prism Element (v2 API)** — Direct cluster access for storage, disks, data protection, system config, health checks
 - **Tool annotations** — Every tool carries MCP `readOnlyHint`/`destructiveHint`/`idempotentHint` metadata, so clients can require approval for destructive operations (`delete_vm`, `power_off_vm`, …) and fast-track read-only ones

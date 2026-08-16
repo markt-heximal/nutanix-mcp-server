@@ -320,6 +320,111 @@
       }
     },
     {
+      "name": "create_storage_container",
+      "title": "Create Storage Container",
+      "description": "Create a storage container on a cluster. Containers thin-provision against the cluster's storage pool, so capacity settings are optional. Optionally set replication factor, an advertised (logical) capacity cap, an explicit reservation, and inline compression. Returns a task UUID.",
+      "min_role": "operator",
+      "destructive": false,
+      "read_only": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Storage container name."
+          },
+          "cluster_uuid": {
+            "type": "string",
+            "description": "UUID (extId) of the cluster to create the container on."
+          },
+          "replication_factor": {
+            "type": "integer",
+            "description": "Replication factor (1, 2, or 3). Must not exceed the cluster's RF. Default: cluster default."
+          },
+          "advertised_capacity_gb": {
+            "type": "integer",
+            "description": "Optional advertised (logical) capacity cap, in GiB."
+          },
+          "reserved_capacity_gb": {
+            "type": "integer",
+            "description": "Optional explicit reserved (guaranteed) capacity, in GiB."
+          },
+          "compression_enabled": {
+            "type": "boolean",
+            "description": "Enable inline compression. Default: cluster default."
+          }
+        },
+        "required": [
+          "name",
+          "cluster_uuid"
+        ]
+      }
+    },
+    {
+      "name": "resize_storage_container",
+      "title": "Resize Storage Container",
+      "description": "Resize or reconfigure a storage container: change its advertised (logical) capacity cap, explicit reservation, name, or compression setting. Uses ETag-based concurrency control. Returns a task UUID.",
+      "min_role": "admin",
+      "destructive": true,
+      "read_only": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "container_uuid": {
+            "type": "string",
+            "description": "The UUID (extId) of the storage container."
+          },
+          "advertised_capacity_gb": {
+            "type": "integer",
+            "description": "New advertised (logical) capacity cap, in GiB."
+          },
+          "reserved_capacity_gb": {
+            "type": "integer",
+            "description": "New explicit reserved (guaranteed) capacity, in GiB."
+          },
+          "name": {
+            "type": "string",
+            "description": "New container name."
+          },
+          "compression_enabled": {
+            "type": "boolean",
+            "description": "Enable or disable inline compression."
+          }
+        },
+        "required": [
+          "container_uuid"
+        ]
+      }
+    },
+    {
+      "name": "delete_storage_container",
+      "title": "Delete Storage Container",
+      "description": "Delete a storage container by UUID. Requires confirm=true to proceed. Uses ETag-based concurrency control. Returns a task UUID. Fails if the container still holds vdisks/VMs unless ignore_small_files is set.",
+      "min_role": "admin",
+      "destructive": true,
+      "read_only": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "container_uuid": {
+            "type": "string",
+            "description": "The UUID (extId) of the storage container to delete."
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "Must be true to proceed with deletion."
+          },
+          "ignore_small_files": {
+            "type": "boolean",
+            "description": "Allow deletion even if the container holds small files. Default: false."
+          }
+        },
+        "required": [
+          "container_uuid"
+        ]
+      }
+    },
+    {
       "name": "pe_get_cluster_info",
       "title": "PE: Get Cluster Info",
       "description": "Get cluster info directly from a Prism Element node. Returns AOS version, cluster name, storage capacity, and health.",
@@ -866,7 +971,7 @@
     {
       "name": "pe_get_cluster_health",
       "title": "PE: Get Cluster Health",
-      "description": "Get cluster data resiliency and health status. Returns domain fault tolerance status, rebuild capacity, and overall health.",
+      "description": "Get cluster data resiliency and fault tolerance status. Returns per-domain (NODE, RACKABLE_UNIT, RACK, DISK) fault tolerance: how many failures each component can tolerate, and an explanatory message when it cannot.",
       "min_role": "viewer",
       "destructive": false,
       "read_only": true,
@@ -1037,6 +1142,136 @@
           "subnet_uuid": {
             "type": "string",
             "description": "The UUID (extId) of the subnet"
+          }
+        },
+        "required": [
+          "subnet_uuid"
+        ]
+      }
+    },
+    {
+      "name": "create_subnet",
+      "title": "Create Subnet",
+      "description": "Create a VLAN-backed subnet on a cluster. Provide the VLAN id and target cluster UUID. Optionally enable IPAM (a managed subnet) by supplying a network CIDR, default gateway, and a DHCP pool range. Returns a task UUID.",
+      "min_role": "operator",
+      "destructive": false,
+      "read_only": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Subnet name."
+          },
+          "cluster_uuid": {
+            "type": "string",
+            "description": "UUID (extId) of the cluster to create the subnet on."
+          },
+          "vlan_id": {
+            "type": "integer",
+            "description": "VLAN ID (use 0 for the untagged/native VLAN)."
+          },
+          "subnet_type": {
+            "type": "string",
+            "enum": [
+              "VLAN",
+              "OVERLAY"
+            ],
+            "description": "Subnet type. Default: VLAN."
+          },
+          "description": {
+            "type": "string",
+            "description": "Optional description."
+          },
+          "network_cidr": {
+            "type": "string",
+            "description": "Optional. Enables IPAM. Network in CIDR form, e.g. '10.0.1.0/24'."
+          },
+          "gateway_ip": {
+            "type": "string",
+            "description": "Optional default gateway IP (requires network_cidr)."
+          },
+          "dhcp_pool_start": {
+            "type": "string",
+            "description": "Optional DHCP/managed pool start IP (requires network_cidr)."
+          },
+          "dhcp_pool_end": {
+            "type": "string",
+            "description": "Optional DHCP/managed pool end IP (requires network_cidr)."
+          }
+        },
+        "required": [
+          "name",
+          "cluster_uuid",
+          "vlan_id"
+        ]
+      }
+    },
+    {
+      "name": "update_subnet",
+      "title": "Update Subnet",
+      "description": "Update an existing subnet's configuration (name, description, VLAN id, or IPAM settings). Uses ETag-based concurrency control. Returns a task UUID.",
+      "min_role": "admin",
+      "destructive": true,
+      "read_only": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "subnet_uuid": {
+            "type": "string",
+            "description": "The UUID (extId) of the subnet to update."
+          },
+          "name": {
+            "type": "string",
+            "description": "New subnet name."
+          },
+          "description": {
+            "type": "string",
+            "description": "New description."
+          },
+          "vlan_id": {
+            "type": "integer",
+            "description": "New VLAN ID."
+          },
+          "network_cidr": {
+            "type": "string",
+            "description": "Set/replace the IPAM network CIDR, e.g. '10.0.1.0/24'."
+          },
+          "gateway_ip": {
+            "type": "string",
+            "description": "Set the default gateway IP (requires network_cidr)."
+          },
+          "dhcp_pool_start": {
+            "type": "string",
+            "description": "Managed pool start IP (requires network_cidr)."
+          },
+          "dhcp_pool_end": {
+            "type": "string",
+            "description": "Managed pool end IP (requires network_cidr)."
+          }
+        },
+        "required": [
+          "subnet_uuid"
+        ]
+      }
+    },
+    {
+      "name": "delete_subnet",
+      "title": "Delete Subnet",
+      "description": "Delete a subnet by UUID. Requires confirm=true to proceed. Uses ETag-based concurrency control. Returns a task UUID. Fails if VMs still use the subnet.",
+      "min_role": "admin",
+      "destructive": true,
+      "read_only": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "subnet_uuid": {
+            "type": "string",
+            "description": "The UUID (extId) of the subnet to delete."
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "Must be true to proceed with deletion."
           }
         },
         "required": [

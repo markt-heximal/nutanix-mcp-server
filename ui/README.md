@@ -7,7 +7,7 @@ management API running on your AI factory mini.
 |------|-----------|
 | `LOVABLE_BUILD_SPEC.md` | **Start here.** Section 1 is a prompt to paste into a new Lovable project; the rest is the screen-by-screen brief. |
 | `API_REFERENCE.md` | Exact endpoints, request/response shapes, error codes, role map. Paste into Lovable **project knowledge**. |
-| `tool-catalog.json` | All 65 tools with titles, `min_role`, `destructive`, and JSON-Schema inputs — generated from the server, so forms match reality. |
+| `tool-catalog.json` | All 71 tools with titles, `min_role`, `destructive`, and JSON-Schema inputs — generated from the server, so forms match reality. |
 | `src/lib/types.ts` | TypeScript types for the API. |
 | `src/lib/nutanixClient.ts` | Drop-in typed API client (`login`, `callTool`, `waitForTask`, role/config helpers). |
 
