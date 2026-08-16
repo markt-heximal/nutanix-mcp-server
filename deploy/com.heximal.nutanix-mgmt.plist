@@ -1,10 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   launchd unit for running the Nutanix management API natively on macOS
-  (no Docker). Install:
+  (no Docker).
+
+  NOTE: this is an ALTERNATIVE to the Docker deployment, not what runs today.
+  ai-factory-mini currently runs the API as the OrbStack container
+  `nutanix-mgmt-api-1` from deploy/docker-compose.orbstack.yml (service `api`),
+  reading /Users/markt/nutanix-mcp-server/.env. Do not load this unit alongside
+  it — both bind 127.0.0.1:9780.
+
+  Install:
 
     # 1. Create a venv with the api extra:
-    cd /Users/SHARED/nutanix-mcp-server
+    cd /Users/markt/nutanix-mcp-server
     python3 -m venv .venv && ./.venv/bin/pip install -e '.[api]'
 
     # 2. Put secrets in .env and .management.env (chmod 600), users.json somewhere safe.
@@ -16,7 +24,7 @@
 
   Adjust WorkingDirectory / ProgramArguments paths and the EnvironmentVariables
   below for your machine. Front it with a TLS proxy (Caddy via Homebrew, or
-  `caddy reverse-proxy --to 127.0.0.1:9780`) — do not expose 9780 directly.
+  `caddy reverse-proxy` pointed at 127.0.0.1:9780) — do not expose 9780 directly.
 -->
 <plist version="1.0">
 <dict>
@@ -24,11 +32,11 @@
 	<string>com.heximal.nutanix-mgmt</string>
 
 	<key>WorkingDirectory</key>
-	<string>/Users/SHARED/nutanix-mcp-server</string>
+	<string>/Users/markt/nutanix-mcp-server</string>
 
 	<key>ProgramArguments</key>
 	<array>
-		<string>/Users/SHARED/nutanix-mcp-server/.venv/bin/uvicorn</string>
+		<string>/Users/markt/nutanix-mcp-server/.venv/bin/uvicorn</string>
 		<string>management_api:app</string>
 		<string>--host</string>
 		<string>127.0.0.1</string>
@@ -41,7 +49,7 @@
 		<!-- Point at the users file; other MGMT_* / NUTANIX_* come from .env files
 		     loaded by the app. If you prefer, set them all here instead. -->
 		<key>MGMT_USERS_FILE</key>
-		<string>/Users/SHARED/nutanix-mcp-server/users.json</string>
+		<string>/Users/markt/nutanix-mcp-server/users.json</string>
 	</dict>
 
 	<key>RunAtLoad</key>
