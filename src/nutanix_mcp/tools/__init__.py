@@ -41,6 +41,17 @@ _WRITE_TOOL_HINTS: dict[str, dict[str, bool]] = {
     "create_storage_container": {"destructiveHint": False, "idempotentHint": False},
     "resize_storage_container": {"destructiveHint": True, "idempotentHint": True},
     "delete_storage_container": {"destructiveHint": True, "idempotentHint": True},
+    # Cluster services (write)
+    "pe_set_smtp_config": {"destructiveHint": True, "idempotentHint": True},
+    "pe_add_dns_servers": {"destructiveHint": False, "idempotentHint": True},
+    "pe_remove_dns_servers": {"destructiveHint": True, "idempotentHint": True},
+    "pe_add_ntp_servers": {"destructiveHint": False, "idempotentHint": True},
+    "pe_remove_ntp_servers": {"destructiveHint": True, "idempotentHint": True},
+    # Data protection (write)
+    "pe_create_protection_domain": {"destructiveHint": False, "idempotentHint": False},
+    "pe_protect_vms": {"destructiveHint": False, "idempotentHint": True},
+    "pe_create_pd_snapshot": {"destructiveHint": False, "idempotentHint": False},
+    "pe_delete_protection_domain": {"destructiveHint": True, "idempotentHint": True},
 }
 
 # Acronyms and product terms that plain title-casing would mangle.
@@ -54,6 +65,8 @@ _TITLE_WORDS: dict[str, str] = {
     "pd": "PD",
     "smtp": "SMTP",
     "snmp": "SNMP",
+    "dns": "DNS",
+    "ntp": "NTP",
     "nfs": "NFS",
     "html": "HTML",
     "asbuilt": "AsBuilt",
