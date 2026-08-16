@@ -112,27 +112,67 @@ async def test_get_snmp_config(mock_client):
 
 
 @pytest.mark.asyncio
-async def test_get_syslog_config(mock_client):
-    """Test retrieving syslog server configuration."""
-    mock_client.pe_get.return_value = {
-        "entities": [
+async def test_get_syslog_config_none_configured(mock_client):
+    """A cluster with no syslog servers.
+
+    Response body captured verbatim from AOS 6.8.1. There is no v1 or v2 route
+    for this entity — every documented remote_syslog_servers / rsyslog_configs
+    path returns 404 — so the handler goes through the v3 groups API.
+    """
+    mock_client.pe_v3_groups.return_value = {
+        "entity_type": "remote_syslog_server",
+        "filtered_group_count": 0,
+        "filtered_entity_count": 0,
+        "group_results": [],
+        "total_entity_count": 0,
+        "total_group_count": 0,
+    }
+
+    result = await handle_pe_get_syslog_config(mock_client, {"pe_host": "10.0.0.1"})
+
+    assert result == {"count": 0, "servers": []}
+    mock_client.pe_v3_groups.assert_called_once_with("10.0.0.1", "remote_syslog_server")
+
+
+@pytest.mark.asyncio
+async def test_get_syslog_config_populated(mock_client):
+    """A cluster with a syslog server configured.
+
+    The envelope is the standard v3 groups column format. This lab cluster has
+    no syslog server, so the populated case is covered against that documented
+    shape rather than a captured payload — attribute names are passed through
+    verbatim precisely because they cannot be verified here.
+    """
+    mock_client.pe_v3_groups.return_value = {
+        "entity_type": "remote_syslog_server",
+        "group_results": [
             {
-                "server_name": "syslog-prod",
-                "ip_address": "10.2.0.50",
-                "port": 514,
-                "network_protocol": "UDP",
-                "module_list": ["ACROPOLIS", "GENESIS", "PRISM"],
+                "entity_results": [
+                    {
+                        "entity_id": "syslog-1",
+                        "data": [
+                            {"name": "server_name", "values": [{"values": ["syslog-prod"]}]},
+                            {"name": "ip_address", "values": [{"values": ["10.2.0.50"]}]},
+                            {"name": "port", "values": [{"values": ["514"]}]},
+                            {"name": "network_protocol", "values": [{"values": ["UDP"]}]},
+                            {"name": "module_list", "values": [{"values": ["ACROPOLIS", "GENESIS"]}]},
+                        ],
+                    }
+                ]
             }
-        ]
+        ],
     }
 
     result = await handle_pe_get_syslog_config(mock_client, {"pe_host": "10.0.0.1"})
 
     assert result["count"] == 1
-    assert result["servers"][0]["serverName"] == "syslog-prod"
-    assert result["servers"][0]["ipAddress"] == "10.2.0.50"
-    assert result["servers"][0]["networkProtocol"] == "UDP"
-    mock_client.pe_get.assert_called_once_with("10.0.0.1", "remote_syslog_servers")
+    server = result["servers"][0]
+    assert server["entityId"] == "syslog-1"
+    assert server["server_name"] == "syslog-prod"
+    assert server["ip_address"] == "10.2.0.50"
+    assert server["network_protocol"] == "UDP"
+    # Multi-valued attributes stay as lists; single values are unwrapped.
+    assert server["module_list"] == ["ACROPOLIS", "GENESIS"]
 
 
 @pytest.mark.asyncio

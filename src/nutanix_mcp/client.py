@@ -444,6 +444,54 @@ class NutanixClient:
 
         return await self.pe_get(pe_host, resource, params=params)
 
+    async def pe_v3_groups(
+        self,
+        pe_host: str,
+        entity_type: str,
+        count: int = 500,
+    ) -> dict[str, Any]:
+        """Query a Prism Element's v3 groups API for an entity type.
+
+        Some Prism Element configuration lives only behind this endpoint — it is
+        how the Prism UI itself fetches those entities — with no v1 or v2 route.
+        Attributes are deliberately not requested: the API does not validate
+        attribute names, so asking for a guessed set silently yields nothing.
+        """
+        self._validate_pe_host(pe_host)
+        client = await self._get_client_for_pe_v3(pe_host)
+
+        body = {"entity_type": entity_type, "group_member_count": count}
+        try:
+            response = await client.post("/groups", json=body)
+        except httpx.ConnectError as e:
+            raise NutanixAPIError(f"Connection failed to PE host {pe_host}", details=str(e))
+        except httpx.TimeoutException as e:
+            raise NutanixAPIError(
+                f"Request to PE {pe_host} timed out after {self.settings.timeout}s",
+                details=str(e),
+            )
+
+        if response.status_code >= 400:
+            self._handle_error(response)
+
+        return response.json()
+
+    async def _get_client_for_pe_v3(self, pe_host: str) -> httpx.AsyncClient:
+        """Get or create an HTTP client for Prism Element v3 API."""
+        cache_key = f"{pe_host}_v3"
+        if cache_key not in self._pe_clients or self._pe_clients[cache_key].is_closed:
+            self._pe_clients[cache_key] = httpx.AsyncClient(
+                base_url=f"https://{pe_host}:{self.settings.port}/api/nutanix/{self.V3_VERSION}",
+                headers={
+                    **self.settings.get_auth_header(),
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                },
+                verify=self.settings.verify_ssl,
+                timeout=httpx.Timeout(self.settings.timeout),
+            )
+        return self._pe_clients[cache_key]
+
     # ─── Error handling ───────────────────────────────────────────────────
 
     def _handle_error(self, response: httpx.Response) -> None:

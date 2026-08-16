@@ -6,7 +6,7 @@ which are discovered via Prism Central's cluster list.
 
 from typing import Any
 
-from nutanix_mcp.client import NutanixClient
+from nutanix_mcp.client import NutanixAPIError, NutanixClient
 
 # ─── Tool Definitions ─────────────────────────────────────────────────────────
 
@@ -916,24 +916,30 @@ async def handle_pe_get_snmp_config(client: NutanixClient, arguments: dict[str, 
 
 
 async def handle_pe_get_syslog_config(client: NutanixClient, arguments: dict[str, Any]) -> dict[str, Any]:
-    """Get remote syslog server configuration from Prism Element v2 API."""
-    pe_host = arguments["pe_host"]
-    result = await client.pe_get(pe_host, "remote_syslog_servers")
-    entities = result.get("entities", [])
+    """Get remote syslog server configuration from Prism Element.
 
-    return {
-        "count": len(entities),
-        "servers": [
-            {
-                "serverName": s.get("server_name"),
-                "ipAddress": s.get("ip_address"),
-                "port": s.get("port"),
-                "networkProtocol": s.get("network_protocol"),
-                "modules": s.get("module_list", []),
-            }
-            for s in entities
-        ],
-    }
+    There is no v1 or v2 route for this on AOS 6.8.1 — every documented
+    remote_syslog_servers / rsyslog_configs path returns 404. The v3 groups
+    API is the only surface that knows the entity, and it is what the Prism
+    UI itself queries.
+    """
+    pe_host = arguments["pe_host"]
+    result = await client.pe_v3_groups(pe_host, "remote_syslog_server")
+
+    servers: list[dict[str, Any]] = []
+    for group in result.get("group_results") or []:
+        for entity in group.get("entity_results") or []:
+            # Each attribute arrives as {"name": ..., "values": [{"values": [v]}]}.
+            record: dict[str, Any] = {"entityId": entity.get("entity_id")}
+            for field in entity.get("data") or []:
+                values = field.get("values") or []
+                flat = values[0].get("values") if values else None
+                if isinstance(flat, list) and len(flat) == 1:
+                    flat = flat[0]
+                record[field.get("name")] = flat
+            servers.append(record)
+
+    return {"count": len(servers), "servers": servers}
 
 
 async def handle_pe_get_alert_email_config(client: NutanixClient, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -1101,7 +1107,9 @@ async def handle_pe_get_host_disks(client: NutanixClient, arguments: dict[str, A
     pe_host = arguments["pe_host"]
     host_uuid = arguments["host_uuid"]
 
-    result = await client.pe_get(pe_host, f"hosts/{host_uuid}/host_disks")
+    # There is no hosts/{uuid}/host_disks subresource on AOS 6.8.1 — it 404s.
+    # The disks collection filtered by host_ids is the route that works.
+    result = await client.pe_get(pe_host, "disks/", params={"host_ids": host_uuid})
     entities = result.get("entities", [])
 
     return {
@@ -1132,8 +1140,9 @@ async def handle_pe_get_host_nics(client: NutanixClient, arguments: dict[str, An
     pe_host = arguments["pe_host"]
     host_uuid = arguments["host_uuid"]
 
+    # This endpoint returns a bare JSON list, not an {"entities": [...]} envelope.
     result = await client.pe_get(pe_host, f"hosts/{host_uuid}/host_nics")
-    entities = result.get("entities", [])
+    entities = result if isinstance(result, list) else result.get("entities", [])
 
     return {
         "hostUuid": host_uuid,
@@ -1143,12 +1152,13 @@ async def handle_pe_get_host_nics(client: NutanixClient, arguments: dict[str, An
                 "name": n.get("name"),
                 "uuid": n.get("uuid"),
                 "macAddress": n.get("mac_address"),
-                "ipAddress": n.get("ip_address"),
+                "ipv4Addresses": n.get("ipv4_addresses") or [],
+                "ipv6Addresses": n.get("ipv6_addresses") or [],
                 "linkSpeedMbps": n.get("link_speed_in_kbps", 0) // 1000 if n.get("link_speed_in_kbps") else None,
                 "mtu": n.get("mtu_in_bytes"),
-                "interfaceStatus": n.get("interface_status"),
+                "interfaceStatus": n.get("status"),
                 "dhcpEnabled": n.get("dhcp_enabled"),
-                "switchManagementAddress": n.get("switch_management_address"),
+                "switchManagementAddress": n.get("switch_management_ip"),
                 "switchPortId": n.get("switch_port_id"),
                 "switchVlanId": n.get("switch_vlan_id"),
             }
@@ -1378,7 +1388,14 @@ async def handle_pe_list_networks(client: NutanixClient, arguments: dict[str, An
 async def handle_pe_get_metro_witness(client: NutanixClient, arguments: dict[str, Any]) -> dict[str, Any]:
     """Get Metro Availability witness server configuration from Prism Element v2 API."""
     pe_host = arguments["pe_host"]
-    result = await client.pe_get(pe_host, "cluster/metro_witness")
+    try:
+        result = await client.pe_get(pe_host, "cluster/metro_witness")
+    except NutanixAPIError as e:
+        # A cluster with no metro availability configured answers HTTP 412
+        # rather than an empty body. That is "not configured", not a failure.
+        if e.status_code == 412:
+            return {"configured": False, "witness": None}
+        raise
 
     # May return a witness object or empty dict if not configured
     if not result or (isinstance(result, dict) and not result.get("witness_address")):
