@@ -1103,9 +1103,17 @@ async def handle_pe_get_syslog_config(client: NutanixClient, arguments: dict[str
     """Get remote syslog server configuration from Prism Element.
 
     There is no v1 or v2 route for this on AOS 6.8.1 — every documented
-    remote_syslog_servers / rsyslog_configs path returns 404. The v3 groups
-    API is the only surface that knows the entity, and it is what the Prism
-    UI itself queries.
+    remote_syslog_servers / rsyslog_configs path returns 404 — so this goes
+    through the v3 groups API, the only surface that accepts the entity type.
+
+    KNOWN LIMITATION (issue #4): on AOS 6.8.1 that surface never actually
+    returns the entity. A syslog server configured via `ncli rsyslog-config
+    add-server` is visible to `ncli` but reports as zero through v3 groups AND
+    through /v3/remote_syslog_servers/list, on both the CVM and the cluster
+    VIP. The configuration appears to live in Zeus and to be readable only via
+    ncli. An empty result therefore does NOT prove syslog is unconfigured, so
+    it is returned with an explicit caveat rather than a bare zero — a silent
+    zero would read as a verified negative in an as-built or compliance audit.
     """
     pe_host = arguments["pe_host"]
     result = await client.pe_v3_groups(pe_host, "remote_syslog_server")
@@ -1122,6 +1130,19 @@ async def handle_pe_get_syslog_config(client: NutanixClient, arguments: dict[str
                     flat = flat[0]
                 record[field.get("name")] = flat
             servers.append(record)
+
+    if not servers:
+        # Not a verified negative — see the KNOWN LIMITATION above.
+        return {
+            "count": 0,
+            "servers": [],
+            "note": (
+                "No syslog servers were returned, but this is NOT proof that none are "
+                "configured. On AOS 6.8.1 this API never reports syslog servers even when "
+                "`ncli rsyslog-config ls-servers` shows them (issue #4). Confirm with ncli "
+                "on a CVM before treating this as evidence that remote logging is absent."
+            ),
+        }
 
     return {"count": len(servers), "servers": servers}
 

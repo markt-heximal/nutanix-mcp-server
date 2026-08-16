@@ -113,11 +113,15 @@ async def test_get_snmp_config(mock_client):
 
 @pytest.mark.asyncio
 async def test_get_syslog_config_none_configured(mock_client):
-    """A cluster with no syslog servers.
+    """An empty response from the v3 groups API.
 
     Response body captured verbatim from AOS 6.8.1. There is no v1 or v2 route
     for this entity — every documented remote_syslog_servers / rsyslog_configs
     path returns 404 — so the handler goes through the v3 groups API.
+
+    Note this is the response the cluster gives whether or not syslog is
+    actually configured (issue #4), which is why the handler must attach a
+    caveat rather than reporting a bare zero.
     """
     mock_client.pe_v3_groups.return_value = {
         "entity_type": "remote_syslog_server",
@@ -130,18 +134,23 @@ async def test_get_syslog_config_none_configured(mock_client):
 
     result = await handle_pe_get_syslog_config(mock_client, {"pe_host": "10.0.0.1"})
 
-    assert result == {"count": 0, "servers": []}
+    assert result["count"] == 0
+    assert result["servers"] == []
+    # An empty result must never be presentable as a verified negative.
+    assert "NOT proof" in result["note"]
     mock_client.pe_v3_groups.assert_called_once_with("10.0.0.1", "remote_syslog_server")
 
 
 @pytest.mark.asyncio
 async def test_get_syslog_config_populated(mock_client):
-    """A cluster with a syslog server configured.
+    """The parsing path for a populated groups envelope.
 
-    The envelope is the standard v3 groups column format. This lab cluster has
-    no syslog server, so the populated case is covered against that documented
-    shape rather than a captured payload — attribute names are passed through
-    verbatim precisely because they cannot be verified here.
+    The envelope is the standard v3 groups column format, NOT a captured
+    payload: AOS 6.8.1 never returns this entity even when syslog is
+    configured (issue #4), so no real response of this shape could be
+    obtained to test against. Attribute names are passed through verbatim
+    precisely because they cannot be verified here. This test therefore pins
+    the parsing logic only — it is not evidence the tool works end to end.
     """
     mock_client.pe_v3_groups.return_value = {
         "entity_type": "remote_syslog_server",
@@ -173,6 +182,8 @@ async def test_get_syslog_config_populated(mock_client):
     assert server["network_protocol"] == "UDP"
     # Multi-valued attributes stay as lists; single values are unwrapped.
     assert server["module_list"] == ["ACROPOLIS", "GENESIS"]
+    # The caveat belongs only on an empty result, not on real data.
+    assert "note" not in result
 
 
 @pytest.mark.asyncio
