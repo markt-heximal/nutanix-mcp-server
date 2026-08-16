@@ -666,10 +666,31 @@ async def handle_pe_list_hosts(client: NutanixClient, arguments: dict[str, Any])
     }
 
 
+def _as_int(value: Any) -> int | None:
+    """Normalise a Prism numeric stat to int.
+
+    Prism returns several usage/capacity stats as strings ("241860689920")
+    while sibling fields on the same entity are ints, so callers otherwise get
+    inconsistent types for the same kind of value.
+    """
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 async def handle_pe_list_containers(client: NutanixClient, arguments: dict[str, Any]) -> dict[str, Any]:
-    """List storage containers from Prism Element v2 API."""
+    """List storage containers from Prism Element v2 API.
+
+    The v2 resource is "storage_containers"; "containers" is a 404. Entity
+    fields are storage_container_uuid (not container_uuid) and erasure_code
+    (a string such as "off", not a boolean erasure_coded). There is no
+    storage_pool_uuid on this entity.
+    """
     pe_host = arguments["pe_host"]
-    result = await client.pe_list(pe_host, "containers")
+    result = await client.pe_list(pe_host, "storage_containers")
     entities = result.get("entities", [])
 
     return {
@@ -677,12 +698,15 @@ async def handle_pe_list_containers(client: NutanixClient, arguments: dict[str, 
         "containers": [
             {
                 "name": c.get("name"),
-                "containerUuid": c.get("container_uuid"),
-                "storagePoolUuid": c.get("storage_pool_uuid"),
-                "maxCapacityBytes": c.get("max_capacity"),
+                "containerUuid": c.get("storage_container_uuid"),
+                "clusterUuid": c.get("cluster_uuid"),
+                "maxCapacityBytes": _as_int(c.get("max_capacity")),
+                "usedBytes": _as_int((c.get("usage_stats") or {}).get("storage.usage_bytes")),
                 "replicationFactor": c.get("replication_factor"),
                 "compressionEnabled": c.get("compression_enabled"),
-                "erasureCoded": c.get("erasure_coded"),
+                "erasureCode": c.get("erasure_code"),
+                "onDiskDedup": c.get("on_disk_dedup"),
+                "markedForRemoval": c.get("marked_for_removal"),
             }
             for c in entities
         ],
@@ -690,9 +714,14 @@ async def handle_pe_list_containers(client: NutanixClient, arguments: dict[str, 
 
 
 async def handle_pe_list_storage_pools(client: NutanixClient, arguments: dict[str, Any]) -> dict[str, Any]:
-    """List storage pools from Prism Element v2 API."""
+    """List storage pools from Prism Element v1 API.
+
+    There is no v2.0 storage_pools resource (404) -- this lives on v1 only,
+    which returns camelCase fields (storagePoolUuid, usageStats) rather than
+    the snake_case used throughout v2.
+    """
     pe_host = arguments["pe_host"]
-    result = await client.pe_list(pe_host, "storage_pools")
+    result = await client.pe_v1_get(pe_host, "storage_pools")
     entities = result.get("entities", [])
 
     return {
@@ -700,10 +729,12 @@ async def handle_pe_list_storage_pools(client: NutanixClient, arguments: dict[st
         "storagePools": [
             {
                 "name": sp.get("name"),
-                "uuid": sp.get("storage_pool_uuid"),
-                "capacityBytes": sp.get("capacity"),
-                "usageBytes": sp.get("usage_stats", {}).get("storage.usage_bytes"),
-                "numDisks": len(sp.get("disks", [])),
+                "uuid": sp.get("storagePoolUuid"),
+                "capacityBytes": _as_int(sp.get("capacity")),
+                "usageBytes": _as_int((sp.get("usageStats") or {}).get("storage.usage_bytes")),
+                "reservedCapacityBytes": _as_int(sp.get("reservedCapacity")),
+                "numDisks": len(sp.get("disks") or sp.get("diskUuids") or []),
+                "markedForRemoval": sp.get("markedForRemoval"),
             }
             for sp in entities
         ],
@@ -932,16 +963,30 @@ async def handle_pe_get_nfs_whitelists(client: NutanixClient, arguments: dict[st
 
 
 async def handle_pe_get_licensing_info(client: NutanixClient, arguments: dict[str, Any]) -> dict[str, Any]:
-    """Get licensing information from Prism Element v1 API."""
+    """Get licensing information from Prism Element v1 API.
+
+    The payload nests everything under "licenseDTO"; reading the top level
+    yields all-None. Enabled features come from allowanceMap, a dict of
+    feature key -> {displayName, boolValue: {boolValue: bool}}.
+    """
     pe_host = arguments["pe_host"]
     result = await client.pe_v1_get(pe_host, "license")
+    dto = result.get("licenseDTO") or {}
+
+    enabled = []
+    for key, allowance in (dto.get("allowanceMap") or {}).items():
+        if not isinstance(allowance, dict):
+            continue
+        inner = allowance.get("boolValue") or {}
+        if inner.get("boolValue") is True:
+            enabled.append(allowance.get("displayName") or key)
 
     return {
-        "category": result.get("category"),
-        "licenseType": result.get("license_type"),
-        "expiryDate": result.get("expiry_date"),
-        "clusterUuid": result.get("cluster_uuid"),
-        "enabledFeatures": result.get("enabled_feature_list", []),
+        "category": dto.get("category"),
+        "subCategory": dto.get("subCategory"),
+        "licenseClass": dto.get("licenseClass"),
+        "clusterExpiryUsecs": dto.get("clusterExpiryUsecs"),
+        "enabledFeatures": sorted(enabled),
     }
 
 

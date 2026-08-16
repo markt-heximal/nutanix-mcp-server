@@ -167,21 +167,64 @@ async def test_get_nfs_whitelists(mock_client):
     mock_client.pe_get.assert_called_once_with("10.0.0.1", "cluster/nfs_whitelist")
 
 
+def _allowance(display_name, enabled):
+    """Build one allowanceMap entry in the shape v1/license actually returns."""
+    return {
+        "allowancesType": "BOOLEAN",
+        "boolValue": {
+            "allowanceType": "BOOLEAN",
+            "boolValue": enabled,
+            "intValue": None,
+            "violationAction": "Warn",
+        },
+        "displayName": display_name,
+        "clusterUuids": None,
+    }
+
+
 @pytest.mark.asyncio
 async def test_get_licensing_info(mock_client):
-    """Test retrieving licensing information."""
+    """v1/license nests everything under licenseDTO.
+
+    The previous fixture asserted a flat schema with license_type /
+    expiry_date / enabled_feature_list -- none of which the API returns. It
+    passed while every real call produced all-None. Shape below is captured
+    from a live AOS 6.8.1 cluster.
+    """
     mock_client.pe_v1_get.return_value = {
-        "category": "ULTIMATE",
-        "license_type": "PRISM_PRO",
-        "expiry_date": "2027-01-15",
-        "cluster_uuid": "cluster-uuid-123",
-        "enabled_feature_list": ["DEDUPLICATION", "COMPRESSION", "ENCRYPTION"],
+        "actionMetadata": {},
+        "complianceDetails": {},
+        "licenseInfoDTO": {},
+        "licenseDTO": {
+            "category": "Community",
+            "subCategory": "",
+            "licenseClass": "appliance",
+            "clusterExpiryUsecs": 0,
+            "allowanceMap": {
+                "SNMP": _allowance("SNMP", True),
+                "OFFLINE_COMPRESSION": _allowance("Post-process Compression", True),
+                "METRO_AVAILABILITY": _allowance("Metro Availability", False),
+            },
+        },
     }
 
     result = await handle_pe_get_licensing_info(mock_client, {"pe_host": "10.0.0.1"})
 
-    assert result["category"] == "ULTIMATE"
-    assert result["licenseType"] == "PRISM_PRO"
-    assert result["expiryDate"] == "2027-01-15"
-    assert "DEDUPLICATION" in result["enabledFeatures"]
+    assert result["category"] == "Community"
+    assert result["licenseClass"] == "appliance"
+    assert result["clusterExpiryUsecs"] == 0
+    # Enabled features come from allowanceMap, keyed on the nested boolValue.
+    assert result["enabledFeatures"] == ["Post-process Compression", "SNMP"]
+    assert "Metro Availability" not in result["enabledFeatures"]
     mock_client.pe_v1_get.assert_called_once_with("10.0.0.1", "license")
+
+
+@pytest.mark.asyncio
+async def test_get_licensing_info_missing_dto(mock_client):
+    """A payload without licenseDTO must degrade, not raise."""
+    mock_client.pe_v1_get.return_value = {"complianceDetails": {}}
+
+    result = await handle_pe_get_licensing_info(mock_client, {"pe_host": "10.0.0.1"})
+
+    assert result["category"] is None
+    assert result["enabledFeatures"] == []
