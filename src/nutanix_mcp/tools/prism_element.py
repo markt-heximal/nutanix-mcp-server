@@ -619,70 +619,6 @@ PE_TOOLS: list[dict] = [
             "required": ["pe_host", "address", "port"],
         },
     },
-    {
-        "name": "pe_add_dns_servers",
-        "description": "Add one or more DNS name servers to a Prism Element cluster.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "pe_host": {"type": "string", "description": "Prism Element CVM IP or hostname."},
-                "servers": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "DNS server IPs to add, e.g. ['8.8.8.8', '1.1.1.1'].",
-                },
-            },
-            "required": ["pe_host", "servers"],
-        },
-    },
-    {
-        "name": "pe_remove_dns_servers",
-        "description": "Remove one or more DNS name servers from a Prism Element cluster.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "pe_host": {"type": "string", "description": "Prism Element CVM IP or hostname."},
-                "servers": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "DNS server IPs to remove.",
-                },
-            },
-            "required": ["pe_host", "servers"],
-        },
-    },
-    {
-        "name": "pe_add_ntp_servers",
-        "description": "Add one or more NTP time servers to a Prism Element cluster.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "pe_host": {"type": "string", "description": "Prism Element CVM IP or hostname."},
-                "servers": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "NTP server hostnames or IPs to add, e.g. ['pool.ntp.org'].",
-                },
-            },
-            "required": ["pe_host", "servers"],
-        },
-    },
-    {
-        "name": "pe_remove_ntp_servers",
-        "description": "Remove one or more NTP time servers from a Prism Element cluster.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "pe_host": {"type": "string", "description": "Prism Element CVM IP or hostname."},
-                "servers": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "NTP server hostnames or IPs to remove.",
-                },
-            },
-            "required": ["pe_host", "servers"],
-        },
-    },
     # ─── Data protection (write) ──────────────────────────────────────────────
     {
         "name": "pe_create_protection_domain",
@@ -1687,39 +1623,6 @@ async def handle_pe_set_smtp_config(client: NutanixClient, arguments: dict[str, 
     return {"status": "smtp_config_updated", "address": arguments["address"]}
 
 
-async def handle_pe_add_dns_servers(client: NutanixClient, arguments: dict[str, Any]) -> dict[str, Any]:
-    """Add DNS name servers to a Prism Element cluster."""
-    pe_host = arguments["pe_host"]
-    servers = arguments["servers"]
-    # v2.0 manages name servers via the add_list/remove_list action sub-resources.
-    await client.pe_post(pe_host, "cluster/name_servers/add_list", body=servers)
-    return {"status": "dns_servers_added", "servers": servers}
-
-
-async def handle_pe_remove_dns_servers(client: NutanixClient, arguments: dict[str, Any]) -> dict[str, Any]:
-    """Remove DNS name servers from a Prism Element cluster."""
-    pe_host = arguments["pe_host"]
-    servers = arguments["servers"]
-    await client.pe_post(pe_host, "cluster/name_servers/remove_list", body=servers)
-    return {"status": "dns_servers_removed", "servers": servers}
-
-
-async def handle_pe_add_ntp_servers(client: NutanixClient, arguments: dict[str, Any]) -> dict[str, Any]:
-    """Add NTP time servers to a Prism Element cluster."""
-    pe_host = arguments["pe_host"]
-    servers = arguments["servers"]
-    await client.pe_post(pe_host, "cluster/ntp_servers/add_list", body=servers)
-    return {"status": "ntp_servers_added", "servers": servers}
-
-
-async def handle_pe_remove_ntp_servers(client: NutanixClient, arguments: dict[str, Any]) -> dict[str, Any]:
-    """Remove NTP time servers from a Prism Element cluster."""
-    pe_host = arguments["pe_host"]
-    servers = arguments["servers"]
-    await client.pe_post(pe_host, "cluster/ntp_servers/remove_list", body=servers)
-    return {"status": "ntp_servers_removed", "servers": servers}
-
-
 # ─── Data protection (write) handlers ─────────────────────────────────────────
 
 
@@ -1815,10 +1718,6 @@ PE_HANDLERS: dict[str, Any] = {
     "pe_list_pd_replications": handle_pe_list_pd_replications,
     # Cluster services (write)
     "pe_set_smtp_config": handle_pe_set_smtp_config,
-    "pe_add_dns_servers": handle_pe_add_dns_servers,
-    "pe_remove_dns_servers": handle_pe_remove_dns_servers,
-    "pe_add_ntp_servers": handle_pe_add_ntp_servers,
-    "pe_remove_ntp_servers": handle_pe_remove_ntp_servers,
     # Data protection (write)
     "pe_create_protection_domain": handle_pe_create_protection_domain,
     "pe_protect_vms": handle_pe_protect_vms,
