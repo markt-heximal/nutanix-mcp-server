@@ -3,7 +3,7 @@
     {
       "name": "list_vms",
       "title": "List VMs",
-      "description": "List ALL virtual machines on Nutanix (auto-paginates internally). Returns complete results in one call \u2014 no manual pagination needed. Use 'cluster_name' to filter VMs to a specific cluster by name. Use 'filter' to narrow results via OData. Use 'limit' only if you want a subset.",
+      "description": "List ALL virtual machines on Nutanix (auto-paginates internally). Returns complete results in one call — no manual pagination needed. Use 'cluster_name' to filter VMs to a specific cluster by name. Use 'filter' to narrow results via OData. Use 'limit' only if you want a subset.",
       "min_role": "viewer",
       "destructive": false,
       "read_only": true,
@@ -219,7 +219,7 @@
     {
       "name": "list_clusters",
       "title": "List Clusters",
-      "description": "List ALL Nutanix clusters registered with Prism Central (auto-paginates internally). Returns complete results in one call \u2014 no manual pagination needed.",
+      "description": "List ALL Nutanix clusters registered with Prism Central (auto-paginates internally). Returns complete results in one call — no manual pagination needed.",
       "min_role": "viewer",
       "destructive": false,
       "read_only": true,
@@ -256,7 +256,7 @@
     {
       "name": "list_hosts",
       "title": "List Hosts",
-      "description": "List ALL hypervisor hosts (auto-paginates internally). Returns complete results in one call \u2014 no manual pagination needed. Optionally filter by cluster UUID.",
+      "description": "List ALL hypervisor hosts (auto-paginates internally). Returns complete results in one call — no manual pagination needed. Optionally filter by cluster UUID.",
       "min_role": "viewer",
       "destructive": false,
       "read_only": true,
@@ -301,7 +301,7 @@
     {
       "name": "list_storage_containers",
       "title": "List Storage Containers",
-      "description": "List ALL storage containers (auto-paginates internally). Returns complete results in one call \u2014 no manual pagination needed.",
+      "description": "List ALL storage containers (auto-paginates internally). Returns complete results in one call — no manual pagination needed.",
       "min_role": "viewer",
       "destructive": false,
       "read_only": true,
@@ -1160,118 +1160,6 @@
       }
     },
     {
-      "name": "pe_add_dns_servers",
-      "title": "PE: Add DNS Servers",
-      "description": "Add one or more DNS name servers to a Prism Element cluster.",
-      "min_role": "operator",
-      "destructive": false,
-      "read_only": false,
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "pe_host": {
-            "type": "string",
-            "description": "Prism Element CVM IP or hostname."
-          },
-          "servers": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "DNS server IPs to add, e.g. ['8.8.8.8', '1.1.1.1']."
-          }
-        },
-        "required": [
-          "pe_host",
-          "servers"
-        ]
-      }
-    },
-    {
-      "name": "pe_remove_dns_servers",
-      "title": "PE: Remove DNS Servers",
-      "description": "Remove one or more DNS name servers from a Prism Element cluster.",
-      "min_role": "admin",
-      "destructive": true,
-      "read_only": false,
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "pe_host": {
-            "type": "string",
-            "description": "Prism Element CVM IP or hostname."
-          },
-          "servers": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "DNS server IPs to remove."
-          }
-        },
-        "required": [
-          "pe_host",
-          "servers"
-        ]
-      }
-    },
-    {
-      "name": "pe_add_ntp_servers",
-      "title": "PE: Add NTP Servers",
-      "description": "Add one or more NTP time servers to a Prism Element cluster.",
-      "min_role": "operator",
-      "destructive": false,
-      "read_only": false,
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "pe_host": {
-            "type": "string",
-            "description": "Prism Element CVM IP or hostname."
-          },
-          "servers": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "NTP server hostnames or IPs to add, e.g. ['pool.ntp.org']."
-          }
-        },
-        "required": [
-          "pe_host",
-          "servers"
-        ]
-      }
-    },
-    {
-      "name": "pe_remove_ntp_servers",
-      "title": "PE: Remove NTP Servers",
-      "description": "Remove one or more NTP time servers from a Prism Element cluster.",
-      "min_role": "admin",
-      "destructive": true,
-      "read_only": false,
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "pe_host": {
-            "type": "string",
-            "description": "Prism Element CVM IP or hostname."
-          },
-          "servers": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "NTP server hostnames or IPs to remove."
-          }
-        },
-        "required": [
-          "pe_host",
-          "servers"
-        ]
-      }
-    },
-    {
       "name": "pe_create_protection_domain",
       "title": "PE: Create Protection Domain",
       "description": "Create an (async DR) protection domain on a Prism Element cluster. A protection domain groups VMs for snapshot scheduling and replication.",
@@ -1390,7 +1278,7 @@
     {
       "name": "list_subnets",
       "title": "List Subnets",
-      "description": "List ALL subnets/VLANs in Prism Central (auto-paginates internally). Returns complete results in one call \u2014 no manual pagination needed.",
+      "description": "List ALL subnets/VLANs in Prism Central (auto-paginates internally). Returns complete results in one call — no manual pagination needed.",
       "min_role": "viewer",
       "destructive": false,
       "read_only": true,
@@ -1561,7 +1449,7 @@
     {
       "name": "list_images",
       "title": "List Images",
-      "description": "List ALL disk images (ISOs, QCOW2) in the image library (auto-paginates internally). Returns complete results in one call \u2014 no manual pagination needed.",
+      "description": "List ALL disk images (ISOs, QCOW2) in the image library (auto-paginates internally). Returns complete results in one call — no manual pagination needed.",
       "min_role": "viewer",
       "destructive": false,
       "read_only": true,
@@ -1602,7 +1490,7 @@
     {
       "name": "list_categories",
       "title": "List Categories",
-      "description": "List ALL category keys and values (auto-paginates internally). Returns complete results in one call \u2014 no manual pagination needed.",
+      "description": "List ALL category keys and values (auto-paginates internally). Returns complete results in one call — no manual pagination needed.",
       "min_role": "viewer",
       "destructive": false,
       "read_only": true,
@@ -1643,7 +1531,7 @@
     {
       "name": "list_tasks",
       "title": "List Tasks",
-      "description": "List ALL recent Nutanix tasks (auto-paginates internally). Returns complete results in one call \u2014 no manual pagination needed. Use filter to narrow by status (RUNNING, FAILED, SUCCEEDED).",
+      "description": "List ALL recent Nutanix tasks (auto-paginates internally). Returns complete results in one call — no manual pagination needed. Use filter to narrow by status (RUNNING, FAILED, SUCCEEDED).",
       "min_role": "viewer",
       "destructive": false,
       "read_only": true,
@@ -1685,7 +1573,7 @@
     {
       "name": "list_alerts",
       "title": "List Alerts",
-      "description": "List ALL alerts from Prism Central (auto-paginates internally). Returns complete results in one call \u2014 no manual pagination needed. Supports filtering by severity and resolved status.",
+      "description": "List ALL alerts from Prism Central (auto-paginates internally). Returns complete results in one call — no manual pagination needed. Supports filtering by severity and resolved status.",
       "min_role": "viewer",
       "destructive": false,
       "read_only": true,
@@ -1827,7 +1715,7 @@
     {
       "name": "list_entities_by_category",
       "title": "List Entities By Category",
-      "description": "Find ALL VMs tagged with a specific category key:value pair (auto-paginates internally). Returns complete results in one call \u2014 no manual pagination needed.",
+      "description": "Find ALL VMs tagged with a specific category key:value pair (auto-paginates internally). Returns complete results in one call — no manual pagination needed.",
       "min_role": "viewer",
       "destructive": false,
       "read_only": true,
@@ -1933,7 +1821,7 @@
     {
       "name": "generate_asbuilt",
       "title": "Generate AsBuilt",
-      "description": "Generate an infrastructure AsBuilt report from a Nutanix Prism Element cluster. Accepts a PE IP address, cluster name, or cluster UUID \u2014 cluster names and UUIDs are auto-resolved to the PE external IP via Prism Central. Queries live cluster data and returns a structured Markdown report with tables and Mermaid topology diagrams. Use 'sections' to include only specific parts. Available sections: overview, system, hosts, vms, networks, storage, protection_domains, alerts, health.",
+      "description": "Generate an infrastructure AsBuilt report from a Nutanix Prism Element cluster. Accepts a PE IP address, cluster name, or cluster UUID — cluster names and UUIDs are auto-resolved to the PE external IP via Prism Central. Queries live cluster data and returns a structured Markdown report with tables and Mermaid topology diagrams. Use 'sections' to include only specific parts. Available sections: overview, system, hosts, vms, networks, storage, protection_domains, alerts, health.",
       "min_role": "viewer",
       "destructive": false,
       "read_only": true,

@@ -1,4 +1,4 @@
-"""Tests for Prism Element write tools: cluster services (SMTP/DNS/NTP) and
+"""Tests for Prism Element write tools: cluster services (SMTP) and
 data protection (protection domains).
 
 These hit PE v2 endpoints via the pe_put / pe_post / pe_delete client helpers.
@@ -9,13 +9,10 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from nutanix_mcp.tools.prism_element import (
-    handle_pe_add_dns_servers,
-    handle_pe_add_ntp_servers,
     handle_pe_create_pd_snapshot,
     handle_pe_create_protection_domain,
     handle_pe_delete_protection_domain,
     handle_pe_protect_vms,
-    handle_pe_remove_dns_servers,
     handle_pe_set_smtp_config,
 )
 
@@ -67,36 +64,6 @@ async def test_set_smtp_config_defaults_secure_mode(mock_client):
     body = mock_client.pe_put.call_args.kwargs["body"]
     assert body["secure_mode"] == "NONE"
     assert "username" not in body  # omitted when not provided
-
-
-@pytest.mark.asyncio
-async def test_add_dns_servers(mock_client):
-    result = await handle_pe_add_dns_servers(
-        mock_client, {"pe_host": PE, "servers": ["8.8.8.8", "1.1.1.1"]}
-    )
-    assert result["status"] == "dns_servers_added"
-    call = mock_client.pe_post.call_args
-    assert call.args[1] == "cluster/name_servers/add_list"
-    assert call.kwargs["body"] == ["8.8.8.8", "1.1.1.1"]
-
-
-@pytest.mark.asyncio
-async def test_remove_dns_servers(mock_client):
-    result = await handle_pe_remove_dns_servers(
-        mock_client, {"pe_host": PE, "servers": ["8.8.8.8"]}
-    )
-    assert result["status"] == "dns_servers_removed"
-    call = mock_client.pe_post.call_args
-    assert call.args[1] == "cluster/name_servers/remove_list"
-    assert call.kwargs["body"] == ["8.8.8.8"]
-
-
-@pytest.mark.asyncio
-async def test_add_ntp_servers(mock_client):
-    await handle_pe_add_ntp_servers(mock_client, {"pe_host": PE, "servers": ["pool.ntp.org"]})
-    call = mock_client.pe_post.call_args
-    assert call.args[1] == "cluster/ntp_servers/add_list"
-    assert call.kwargs["body"] == ["pool.ntp.org"]
 
 
 # ─── Data protection ──────────────────────────────────────────────────────────

@@ -43,10 +43,6 @@ _WRITE_TOOL_HINTS: dict[str, dict[str, bool]] = {
     "delete_storage_container": {"destructiveHint": True, "idempotentHint": True},
     # Cluster services (write)
     "pe_set_smtp_config": {"destructiveHint": True, "idempotentHint": True},
-    "pe_add_dns_servers": {"destructiveHint": False, "idempotentHint": True},
-    "pe_remove_dns_servers": {"destructiveHint": True, "idempotentHint": True},
-    "pe_add_ntp_servers": {"destructiveHint": False, "idempotentHint": True},
-    "pe_remove_ntp_servers": {"destructiveHint": True, "idempotentHint": True},
     # Data protection (write)
     "pe_create_protection_domain": {"destructiveHint": False, "idempotentHint": False},
     "pe_protect_vms": {"destructiveHint": False, "idempotentHint": True},
