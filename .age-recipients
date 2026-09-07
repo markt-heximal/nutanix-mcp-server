@@ -1,0 +1,4 @@
+# SSH public keys allowed to decrypt credentials.age.
+# Public keys only — safe to commit. Add a line per machine that needs access,
+# then re-encrypt: ./scripts/creds.sh edit  (or: seal)
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGQe/4CAGNwZhq+wkHoNdzYlamAUvXEJeboSWuVn/b2g markt-mac-fleet
