@@ -1880,6 +1880,65 @@
         "type": "object",
         "properties": {}
       }
+    },
+    {
+      "name": "pe_list_pd_snapshots",
+      "title": "PE: List PD Snapshots",
+      "description": "List the local snapshots held by a protection domain on a Prism Element cluster. Returns snapshot IDs and state — the IDs needed to clear snapshots before deleting the protection domain.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pe_host": {
+            "type": "string",
+            "description": "Prism Element CVM IP or hostname."
+          },
+          "pd_name": {
+            "type": "string",
+            "description": "Protection domain name."
+          }
+        },
+        "required": [
+          "pe_host",
+          "pd_name"
+        ]
+      }
+    },
+    {
+      "name": "pe_delete_pd_snapshot",
+      "title": "PE: Delete PD Snapshot",
+      "description": "Delete a single local snapshot from a protection domain on a Prism Element cluster. Requires confirm=true. Needed to clear snapshots before a protection domain can be deleted.",
+      "min_role": "admin",
+      "destructive": true,
+      "read_only": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pe_host": {
+            "type": "string",
+            "description": "Prism Element CVM IP or hostname."
+          },
+          "pd_name": {
+            "type": "string",
+            "description": "Protection domain name."
+          },
+          "snapshot_id": {
+            "type": "string",
+            "description": "The snapshot ID to delete (from pe_list_pd_snapshots)."
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "Must be true to proceed."
+          }
+        },
+        "required": [
+          "pe_host",
+          "pd_name",
+          "snapshot_id"
+        ]
+      }
     }
   ]
 }

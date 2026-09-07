@@ -11,7 +11,9 @@ import pytest
 from nutanix_mcp.tools.prism_element import (
     handle_pe_create_pd_snapshot,
     handle_pe_create_protection_domain,
+    handle_pe_delete_pd_snapshot,
     handle_pe_delete_protection_domain,
+    handle_pe_list_pd_snapshots,
     handle_pe_protect_vms,
     handle_pe_set_smtp_config,
 )
@@ -118,3 +120,37 @@ async def test_delete_protection_domain_with_confirm(mock_client):
     assert result["status"] == "protection_domain_deleted"
     call = mock_client.pe_delete.call_args
     assert call.args[1] == "protection_domains/pd-prod"
+
+
+# ─── PD snapshots (verified against live AOS 6.8.1) ───────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_list_pd_snapshots(mock_client):
+    mock_client.pe_get = AsyncMock(
+        return_value={"entities": [{"snapshot_id": "36", "state": "AVAILABLE"}]}
+    )
+    result = await handle_pe_list_pd_snapshots(mock_client, {"pe_host": PE, "pd_name": "pd-prod"})
+
+    assert result["count"] == 1
+    assert result["snapshots"][0]["snapshotId"] == "36"
+    assert result["snapshots"][0]["state"] == "AVAILABLE"
+    assert mock_client.pe_get.call_args.args[1] == "protection_domains/pd-prod/dr_snapshots"
+
+
+@pytest.mark.asyncio
+async def test_delete_pd_snapshot_requires_confirm(mock_client):
+    result = await handle_pe_delete_pd_snapshot(
+        mock_client, {"pe_host": PE, "pd_name": "pd-prod", "snapshot_id": "36", "confirm": False}
+    )
+    assert result["status"] == "error"
+    mock_client.pe_delete.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_delete_pd_snapshot_with_confirm(mock_client):
+    result = await handle_pe_delete_pd_snapshot(
+        mock_client, {"pe_host": PE, "pd_name": "pd-prod", "snapshot_id": "36", "confirm": True}
+    )
+    assert result["status"] == "pd_snapshot_deleted"
+    assert mock_client.pe_delete.call_args.args[1] == "protection_domains/pd-prod/dr_snapshots/36"

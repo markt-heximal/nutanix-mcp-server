@@ -48,6 +48,7 @@ _WRITE_TOOL_HINTS: dict[str, dict[str, bool]] = {
     "pe_protect_vms": {"destructiveHint": False, "idempotentHint": True},
     "pe_create_pd_snapshot": {"destructiveHint": False, "idempotentHint": False},
     "pe_delete_protection_domain": {"destructiveHint": True, "idempotentHint": True},
+    "pe_delete_pd_snapshot": {"destructiveHint": True, "idempotentHint": True},
 }
 
 # Acronyms and product terms that plain title-casing would mangle.
