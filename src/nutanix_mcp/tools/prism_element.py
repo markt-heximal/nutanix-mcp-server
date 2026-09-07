@@ -678,7 +678,10 @@ PE_TOOLS: list[dict] = [
         "name": "pe_delete_protection_domain",
         "description": (
             "Delete a protection domain from a Prism Element cluster. Requires "
-            "confirm=true. The protection domain must have no protected VMs."
+            "confirm=true. The protection domain must have no protected VMs AND no "
+            "local snapshots — Prism rejects the delete with HTTP 422 ('has N local "
+            "snapshot(s)') otherwise. Use pe_list_pd_snapshots and "
+            "pe_delete_pd_snapshot to clear snapshots first."
         ),
         "inputSchema": {
             "type": "object",
@@ -688,6 +691,43 @@ PE_TOOLS: list[dict] = [
                 "confirm": {"type": "boolean", "description": "Must be true to proceed."},
             },
             "required": ["pe_host", "pd_name"],
+        },
+    },
+    {
+        "name": "pe_list_pd_snapshots",
+        "description": (
+            "List the local snapshots held by a protection domain on a Prism Element "
+            "cluster. Returns snapshot IDs and state — the IDs needed to clear "
+            "snapshots before deleting the protection domain."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "pe_host": {"type": "string", "description": "Prism Element CVM IP or hostname."},
+                "pd_name": {"type": "string", "description": "Protection domain name."},
+            },
+            "required": ["pe_host", "pd_name"],
+        },
+    },
+    {
+        "name": "pe_delete_pd_snapshot",
+        "description": (
+            "Delete a single local snapshot from a protection domain on a Prism "
+            "Element cluster. Requires confirm=true. Needed to clear snapshots before "
+            "a protection domain can be deleted."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "pe_host": {"type": "string", "description": "Prism Element CVM IP or hostname."},
+                "pd_name": {"type": "string", "description": "Protection domain name."},
+                "snapshot_id": {
+                    "type": "string",
+                    "description": "The snapshot ID to delete (from pe_list_pd_snapshots).",
+                },
+                "confirm": {"type": "boolean", "description": "Must be true to proceed."},
+            },
+            "required": ["pe_host", "pd_name", "snapshot_id"],
         },
     },
 ]
@@ -1675,6 +1715,47 @@ async def handle_pe_delete_protection_domain(client: NutanixClient, arguments: d
     return {"status": "protection_domain_deleted", "pd_name": pd_name}
 
 
+async def handle_pe_list_pd_snapshots(client: NutanixClient, arguments: dict[str, Any]) -> dict[str, Any]:
+    """List a protection domain's local snapshots."""
+    pe_host = arguments["pe_host"]
+    pd_name = arguments["pd_name"]
+    result = await client.pe_get(pe_host, f"protection_domains/{pd_name}/dr_snapshots")
+    entities = result.get("entities", [])
+
+    return {
+        "count": len(entities),
+        "pdName": pd_name,
+        "snapshots": [
+            {
+                "snapshotId": s.get("snapshot_id"),
+                "state": s.get("state"),
+                "createTimeUsecs": s.get("create_time_usecs"),
+                "expiryTimeUsecs": s.get("expiry_time_usecs"),
+                "sizeBytes": s.get("size_in_bytes"),
+            }
+            for s in entities
+        ],
+    }
+
+
+async def handle_pe_delete_pd_snapshot(client: NutanixClient, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Delete a single local snapshot from a protection domain (confirm-guarded)."""
+    pe_host = arguments["pe_host"]
+    pd_name = arguments["pd_name"]
+    snapshot_id = arguments["snapshot_id"]
+    if not arguments.get("confirm", False):
+        return {
+            "status": "error",
+            "message": "Deletion not confirmed. Set 'confirm: true' to proceed.",
+        }
+    await client.pe_delete(pe_host, f"protection_domains/{pd_name}/dr_snapshots/{snapshot_id}")
+    return {
+        "status": "pd_snapshot_deleted",
+        "pd_name": pd_name,
+        "snapshot_id": snapshot_id,
+    }
+
+
 # ─── Handler Dispatch ─────────────────────────────────────────────────────────
 
 PE_HANDLERS: dict[str, Any] = {
@@ -1723,4 +1804,6 @@ PE_HANDLERS: dict[str, Any] = {
     "pe_protect_vms": handle_pe_protect_vms,
     "pe_create_pd_snapshot": handle_pe_create_pd_snapshot,
     "pe_delete_protection_domain": handle_pe_delete_protection_domain,
+    "pe_list_pd_snapshots": handle_pe_list_pd_snapshots,
+    "pe_delete_pd_snapshot": handle_pe_delete_pd_snapshot,
 }
