@@ -53,3 +53,10 @@ Thumbs.db
 
 # Claude Code
 .claude/settings.local.json
+
+# Decrypted credential store. Only credentials.age (encrypted) is committed;
+# the plaintext must never be. See docs/CREDENTIALS.md.
+credentials.md
+credentials.local.md
+*.age.key
+.age/
