@@ -1,11 +1,63 @@
 """Configuration management for the Nutanix MCP server."""
 
 import base64
+import json
 import sys
+from pathlib import Path
 from typing import Annotated, Optional
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import BaseModel, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+
+class PECredentialError(Exception):
+    """A per-cluster credential is configured but cannot be resolved.
+
+    Deliberately distinct from "no credentials configured": this means the
+    operator named a credential for a cluster and it could not be read, which
+    must never silently degrade into using a different cluster's password.
+    """
+
+
+class PECredential(BaseModel):
+    """Credentials for one Prism Element cluster.
+
+    Takes ``username`` plus exactly one of ``password_file`` or ``password``.
+    ``password_file`` is preferred: it keeps the second secret out of the
+    process environment and out of whatever config file the MCP client writes,
+    matching how the rest of this estate stores CVM and Prism secrets.
+    """
+
+    username: str
+    password: Optional[SecretStr] = None
+    password_file: Optional[str] = None
+
+    def resolve_password(self) -> str:
+        """Return the plaintext password, reading ``password_file`` if set.
+
+        Note the caller caches the resulting header on a per-host HTTP client,
+        so a rotated secret takes effect when that client is rebuilt — in
+        practice, on process restart.
+        """
+        if self.password is not None:
+            return self.password.get_secret_value()
+        if not self.password_file:
+            raise PECredentialError(
+                f"credential for user '{self.username}' sets neither password nor password_file"
+            )
+        path = Path(self.password_file).expanduser()
+        try:
+            secret = path.read_text().strip()
+        except OSError as e:
+            raise PECredentialError(f"cannot read password_file {path}: {e}") from e
+        if not secret:
+            raise PECredentialError(f"password_file {path} is empty")
+        return secret
+
+    def auth_header(self) -> dict[str, str]:
+        """Build the Basic auth header for this cluster."""
+        token = base64.b64encode(f"{self.username}:{self.resolve_password()}".encode()).decode()
+        return {"Authorization": f"Basic {token}"}
 
 
 class Settings(BaseSettings):
@@ -77,6 +129,22 @@ class Settings(BaseSettings):
         ),
     )
 
+    # Per-cluster credentials. The global username/password above is a single
+    # pair, which is wrong for any estate with more than one PE cluster: each
+    # cluster has its own Prism `admin` password, so one credential means every
+    # cluster but the first answers 401. NoDecode for the same reason as
+    # allowed_pe_hosts — the validator below owns the parsing.
+    pe_credentials: Annotated[dict[str, "PECredential"], NoDecode] = Field(
+        default_factory=dict,
+        description=(
+            "Per-cluster Prism Element credentials, keyed by PE host, as a JSON "
+            "object. Each value takes 'username' plus either 'password_file' "
+            "(preferred) or 'password'. A host listed here is implicitly "
+            "allowed and never falls back to the global credential. "
+            "Set NUTANIX_PE_CREDENTIALS."
+        ),
+    )
+
     @field_validator("host", mode="before")
     @classmethod
     def validate_host(cls, v: Optional[str]) -> str:
@@ -103,6 +171,32 @@ class Settings(BaseSettings):
             return [h.strip() for h in s.split(",") if h.strip()]
         return v or []
 
+    @field_validator("pe_credentials", mode="before")
+    @classmethod
+    def parse_pe_credentials(cls, v: object) -> dict[str, "PECredential"]:
+        if v is None or v == "":
+            return {}
+        if isinstance(v, str):
+            try:
+                v = json.loads(v)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"NUTANIX_PE_CREDENTIALS is not valid JSON: {e}") from e
+        if not isinstance(v, dict):
+            raise ValueError("NUTANIX_PE_CREDENTIALS must be a JSON object keyed by PE host")
+        out: dict[str, PECredential] = {}
+        for pe_host, entry in v.items():
+            cred = entry if isinstance(entry, PECredential) else PECredential.model_validate(entry)
+            if cred.password is not None and cred.password_file:
+                raise ValueError(
+                    f"NUTANIX_PE_CREDENTIALS['{pe_host}'] sets both password and password_file; use one"
+                )
+            if cred.password is None and not cred.password_file:
+                raise ValueError(
+                    f"NUTANIX_PE_CREDENTIALS['{pe_host}'] needs either password or password_file"
+                )
+            out[str(pe_host)] = cred
+        return out
+
     @property
     def base_url(self) -> str:
         """Base URL for Prism Central API requests."""
@@ -127,6 +221,9 @@ class Settings(BaseSettings):
         Uses NUTANIX_PE_USERNAME / NUTANIX_PE_PASSWORD when set (PE admin
         credentials often differ from Prism Central's), otherwise falls back to
         the Prism Central credentials.
+
+        This is the cluster-agnostic pair. When several PE clusters each have
+        their own password, use get_auth_header_for_pe() instead.
         """
         pe_user = self.pe_username or self.username
         pe_secret = self.pe_password or self.password
@@ -139,13 +236,42 @@ class Settings(BaseSettings):
             "or NUTANIX_USERNAME/NUTANIX_PASSWORD."
         )
 
+    def get_auth_header_for_pe(self, pe_host: str) -> dict[str, str]:
+        """Build the authorization header for one named Prism Element cluster.
+
+        Three tiers, most specific first:
+
+        1. ``pe_credentials[pe_host]`` — this cluster's own credential.
+        2. ``NUTANIX_PE_USERNAME``/``PASSWORD`` — one pair for every PE cluster,
+           for the common case where PE differs from Prism Central but the PE
+           clusters agree with each other.
+        3. The Prism Central credential.
+
+        Tier 1 NEVER degrades to tier 2 or 3. That is the whole point: falling
+        back would send a different cluster's password, and Prism locks the
+        `admin` account for about fifteen minutes after a few failed attempts.
+        Where two clusters' passwords resemble each other, a silent fallback
+        does not read as a wrong password — it reads as a broken cluster. So a
+        missing or unreadable password file has to fail loudly instead.
+        """
+        cred = self.pe_credentials.get(pe_host)
+        if cred is not None:
+            return cred.auth_header()
+        return self.get_pe_auth_header()
+
     def is_pe_host_allowed(self, pe_host: str) -> bool:
         """Check if a PE host is in the allowlist.
 
         Returns True if:
+        - The host has its own entry in pe_credentials (configuring a
+          credential for a named cluster is itself an authorization of it;
+          requiring the host in two places would be a footgun with no security
+          value, since both are operator-set config)
         - The allowlist is empty (permissive mode — relies on network controls)
         - The host matches an entry in the allowlist
         """
+        if pe_host in self.pe_credentials:
+            return True
         if not self.allowed_pe_hosts:
             return True
         return pe_host in self.allowed_pe_hosts

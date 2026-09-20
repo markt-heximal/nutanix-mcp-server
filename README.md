@@ -227,6 +227,49 @@ NUTANIX_TIMEOUT=30
 # NUTANIX_LOG_LEVEL=INFO
 ```
 
+#### Multiple Prism Element clusters
+
+`NUTANIX_USERNAME` / `NUTANIX_PASSWORD` is a single pair, which is enough for
+Prism Central and for one PE cluster. Every PE cluster carries its own Prism
+`admin` password, so in an estate with two or more, the others answer `401` no
+matter what the allowlist says.
+
+`NUTANIX_PE_CREDENTIALS` maps a PE host to its own credential. It is a JSON
+object; each entry takes `username` plus either `password_file` (preferred) or
+`password`:
+
+```env
+NUTANIX_PE_CREDENTIALS={"192.168.86.6":{"username":"admin","password_file":"~/.config/nutanix/prism-admin-ca"}}
+```
+
+- **`password_file` is preferred** — it keeps the second secret out of the
+  process environment and out of whatever config file your MCP client writes.
+  The file is read when that cluster's HTTP client is first built, so a rotated
+  secret takes effect on restart. `~` is expanded.
+- **A host listed here is implicitly allowlisted.** Naming a credential for a
+  cluster authorizes that cluster; you do not also need it in
+  `NUTANIX_ALLOWED_PE_HOSTS`.
+- **A host listed here never falls back.** If its password file is missing or
+  empty the call fails with an explicit error. This is deliberate: Prism locks
+  `admin` for roughly fifteen minutes after a few failed attempts, and where
+  two clusters' passwords resemble each other a silent fallback does not look
+  like a wrong password, it looks like a broken cluster.
+
+Credentials resolve in three tiers, most specific first:
+
+| | Source | Scope |
+|---|---|---|
+| 1 | `NUTANIX_PE_CREDENTIALS[pe_host]` | one named cluster |
+| 2 | `NUTANIX_PE_USERNAME` / `NUTANIX_PE_PASSWORD` | every PE cluster |
+| 3 | `NUTANIX_USERNAME` / `NUTANIX_PASSWORD` | Prism Central, and PE by default |
+
+Tier 2 covers the common case — PE differs from Prism Central, but the PE
+clusters agree with each other. Tier 1 is for when they do not. Tier 1 never
+degrades to 2 or 3; tiers 2 and 3 chain as before.
+
+Hosts with no entry are unaffected, so adding this setting changes nothing for
+an existing deployment.
+
 ### Run
 
 ```bash

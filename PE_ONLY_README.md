@@ -96,6 +96,49 @@ there — the file asserts every exposed tool is `readOnlyHint=True` at import.
 
 ---
 
+## 3. Per-cluster PE credentials — `NUTANIX_PE_CREDENTIALS`
+
+**Problem it solves.** `NUTANIX_PE_USERNAME` / `NUTANIX_PE_PASSWORD` (added in
+`0c1b38c`) gives Prism Element its own credential, separate from Prism
+Central's. That is one pair for *every* PE cluster, which is right when the PE
+clusters agree with each other and wrong when they do not: each cluster carries
+its own Prism `admin` password, so with two clusters the second still answers
+`401` regardless of the allowlist. Here, FL (`10.0.1.242`) and CA
+(`192.168.86.6`) both answer as `admin` with different passwords, so CA was
+unreachable through this server even after being allowlisted.
+
+**What changed.** `config.py` gains a `PECredential` model, a `pe_credentials`
+mapping and `get_auth_header_for_pe(pe_host)`, which layers on top of
+`get_pe_auth_header()` rather than replacing it. `client.py` routes all three PE
+client builders — v1, v2 and v3 — through `_pe_auth_header(pe_host)`.
+
+> The v3 builder was a live bug: it used `get_auth_header()`, the *Prism
+> Central* credential, making it the one PE client that ignored the PE
+> credential entirely. Any v3 PE call 401'd on a cluster whose admin password
+> differs from Prism Central's. Fixed here.
+
+The Prism Central client is untouched. Two files, plus
+`tests/test_pe_credentials.py`.
+
+**Configure** (in `.env`):
+
+```
+NUTANIX_PE_CREDENTIALS={"192.168.86.6":{"username":"admin","password_file":"~/.config/nutanix/prism-admin-ca"}}
+```
+
+Full semantics are in `README.md` → *Multiple Prism Element clusters*. The rule
+worth repeating here: **a host with its own entry never falls back to the global
+credential.** Prism locks `admin` for ~15 minutes after a few failed attempts,
+so a silent fallback spends a lockout attempt on the wrong cluster — and where
+two clusters' passwords resemble each other, the failure does not read as a
+wrong password, it reads as a broken cluster. A missing or empty password file
+raises instead.
+
+Hosts with no entry keep using the global credential, so this is a no-op for a
+single-cluster deployment.
+
+---
+
 ## `NUTANIX_ALLOWED_PE_HOSTS` format (fixed in this patch)
 
 Upstream, this field only accepted JSON-array form — a bare comma-separated

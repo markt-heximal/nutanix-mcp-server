@@ -6,7 +6,7 @@ from typing import Any, Optional
 
 import httpx
 
-from nutanix_mcp.config import Settings
+from nutanix_mcp.config import PECredentialError, Settings
 from nutanix_mcp.sdk_client import NutanixSDKClient
 
 
@@ -334,6 +334,21 @@ class NutanixClient:
                 status_code=None,
             )
 
+    def _pe_auth_header(self, pe_host: str) -> dict[str, str]:
+        """Resolve the auth header for a PE cluster, mapping config faults.
+
+        A misconfigured per-cluster credential is an operator error, not an API
+        error, so it surfaces as ValidationError with the reason attached rather
+        than as an unhandled exception inside a tool call.
+        """
+        try:
+            return self.settings.get_auth_header_for_pe(pe_host)
+        except PECredentialError as e:
+            raise ValidationError(
+                f"Credential for PE host {pe_host} is configured but unusable: {e}",
+                status_code=None,
+            ) from e
+
     async def _get_pe_client(self, pe_host: str) -> httpx.AsyncClient:
         """Get or create an HTTP client for a Prism Element node."""
         self._validate_pe_host(pe_host)
@@ -342,7 +357,7 @@ class NutanixClient:
             self._pe_clients[pe_host] = httpx.AsyncClient(
                 base_url=f"https://{pe_host}:{self.settings.port}/api/nutanix/{self.V2_VERSION}",
                 headers={
-                    **self.settings.get_pe_auth_header(),
+                    **self._pe_auth_header(pe_host),
                     "Content-Type": "application/json",
                     "Accept": "application/json",
                 },
@@ -391,7 +406,7 @@ class NutanixClient:
             self._pe_clients[cache_key] = httpx.AsyncClient(
                 base_url=f"https://{pe_host}:{self.settings.port}/api/nutanix/v1",
                 headers={
-                    **self.settings.get_pe_auth_header(),
+                    **self._pe_auth_header(pe_host),
                     "Content-Type": "application/json",
                     "Accept": "application/json",
                 },
@@ -543,7 +558,11 @@ class NutanixClient:
             self._pe_clients[cache_key] = httpx.AsyncClient(
                 base_url=f"https://{pe_host}:{self.settings.port}/api/nutanix/{self.V3_VERSION}",
                 headers={
-                    **self.settings.get_auth_header(),
+                    # Was get_auth_header() — the Prism Central credential — which
+                    # made this the one PE client that ignored the PE credential
+                    # entirely, so any v3 PE call 401'd on a cluster whose admin
+                    # password differs from Prism Central's.
+                    **self._pe_auth_header(pe_host),
                     "Content-Type": "application/json",
                     "Accept": "application/json",
                 },
