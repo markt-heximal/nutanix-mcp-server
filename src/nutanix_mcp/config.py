@@ -124,7 +124,9 @@ class Settings(BaseSettings):
         default_factory=list,
         description=(
             "Allowlist of Prism Element hosts (IPs or hostnames). "
-            "If empty, PE tools will only accept hosts discovered via list_hosts. "
+            "If empty, PE tools accept ANY host (permissive mode — relies on "
+            "network controls); set it to restrict where credentials are sent. "
+            "Hosts in NUTANIX_PE_CREDENTIALS are accepted either way. "
             "Set NUTANIX_ALLOWED_PE_HOSTS as comma-separated values."
         ),
     )

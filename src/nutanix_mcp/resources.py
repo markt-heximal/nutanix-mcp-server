@@ -214,8 +214,9 @@ graph TD
   v4.1 VM API, so `list_vms` resolves cluster name → UUID then filters client-side
 - **Async wrapping**: SDK calls are synchronous; wrapped in `asyncio.to_thread()`
   to avoid blocking the MCP event loop
-- **PE host allowlist**: Prism Element hosts must be in `NUTANIX_ALLOWED_PE_HOSTS`
-  before credentials are sent, preventing SSRF
+- **PE host allowlist**: when `NUTANIX_ALLOWED_PE_HOSTS` is set, credentials are
+  only sent to hosts in it or in `NUTANIX_PE_CREDENTIALS`, preventing SSRF. When
+  it is empty, any PE host is accepted and network controls are the only guard
 
 ## Deployment
 
