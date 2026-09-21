@@ -133,28 +133,29 @@ async def test_get_cluster_health_empty(mock_client):
 
 @pytest.mark.asyncio
 async def test_list_health_checks(mock_client):
-    """Test listing health check results."""
+    """health_checks returns check definitions, not results (AOS 6.8.1)."""
     mock_client.pe_list.return_value = {
         "entities": [
             {
-                "id": "hc-001",
-                "name": "CVM Memory Usage",
-                "description": "Checks if CVM memory usage exceeds threshold",
-                "affected_entity_types": ["CVM"],
-                "check_type": "RESOURCE",
-                "severity": "WARNING",
-                "last_execution_status": "PASS",
-                "last_passed_time_stamp_in_usecs": 1700000000000000,
+                "id": "cluster::192000",
+                "name": "Go Services Fatal Check",
+                "description": "Check if go services have crashed/restarted recently in PCVM/CVM",
+                "affected_entity_types": ["host"],
+                "check_type": "scheduled",
+                "enabled": True,
+                "schedule_interval_in_secs": 300,
+                "severity_threshold_infos": [
+                    {"severity": "kCritical", "enabled": None},
+                    {"severity": "kWarning", "enabled": True},
+                ],
             },
             {
-                "id": "hc-002",
-                "name": "Disk Space Usage",
-                "description": "Checks cluster disk space utilization",
-                "affected_entity_types": ["DISK"],
-                "check_type": "CAPACITY",
-                "severity": "CRITICAL",
-                "last_execution_status": "PASS",
-                "last_passed_time_stamp_in_usecs": 1700000000000000,
+                "id": "cluster::111000",
+                "name": "E-mail alerts check",
+                "description": "Check email alerts",
+                "affected_entity_types": ["cluster"],
+                "check_type": "not_scheduled",
+                "enabled": True,
             },
         ]
     }
@@ -162,8 +163,14 @@ async def test_list_health_checks(mock_client):
     result = await handle_pe_list_health_checks(mock_client, {"pe_host": "10.0.0.1"})
 
     assert result["count"] == 2
-    assert result["healthChecks"][0]["name"] == "CVM Memory Usage"
-    assert result["healthChecks"][0]["severity"] == "WARNING"
-    assert result["healthChecks"][0]["lastExecutionStatus"] == "PASS"
-    assert result["healthChecks"][1]["checkType"] == "CAPACITY"
+    first, second = result["healthChecks"]
+    assert first["name"] == "Go Services Fatal Check"
+    assert first["enabled"] is True
+    assert first["scheduleIntervalSecs"] == 300
+    assert first["alertSeverities"] == ["kWarning"]
+    assert second["checkType"] == "not_scheduled"
+    assert second["scheduleIntervalSecs"] is None
+    assert second["alertSeverities"] == []
+    assert "lastExecutionStatus" not in first
     mock_client.pe_list.assert_called_once_with("10.0.0.1", "health_checks")
+

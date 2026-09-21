@@ -22,42 +22,47 @@ def mock_client():
 
 @pytest.mark.asyncio
 async def test_list_images(mock_client):
-    """Test listing images from PE cluster."""
-    mock_client.pe_list.return_value = {
+    """Images carry only a container UUID (AOS 6.8.1); the name is resolved."""
+    images = {
         "entities": [
             {
-                "name": "ubuntu-22.04.iso",
+                "name": "noble-cloud-2404",
                 "uuid": "img-uuid-1",
-                "image_type": "ISO_IMAGE",
-                "image_state": "ACTIVE",
-                "vm_disk_size": 3758096384,
-                "source_uri": "http://releases.ubuntu.com/22.04/ubuntu-22.04-live-server-amd64.iso",
-                "storage_container_name": "images-ctr",
-                "created_time_in_usecs": 1700000000000000,
-                "updated_time_in_usecs": 1700000000000000,
-            },
-            {
-                "name": "win2022-base",
-                "uuid": "img-uuid-2",
                 "image_type": "DISK_IMAGE",
                 "image_state": "ACTIVE",
-                "vm_disk_size": 10737418240,
-                "source_uri": None,
-                "storage_container_name": "images-ctr",
-                "created_time_in_usecs": 1699000000000000,
-                "updated_time_in_usecs": 1699000000000000,
+                "vm_disk_size": 3758096384,
+                "storage_container_uuid": "ctr-uuid-1",
+                "created_time_in_usecs": 1788611277850078,
+                "updated_time_in_usecs": 1788611277850078,
+            },
+            {
+                "name": "cidata-tsrouter-fl",
+                "uuid": "img-uuid-2",
+                "image_type": "ISO_IMAGE",
+                "image_state": "ACTIVE",
+                "vm_disk_size": 419430,
+                "storage_container_uuid": "ctr-uuid-unknown",
+                "created_time_in_usecs": 1788754943282926,
+                "updated_time_in_usecs": 1788754943282926,
             },
         ]
     }
+    containers = {"entities": [{"storage_container_uuid": "ctr-uuid-1", "name": "default-container"}]}
+    mock_client.pe_list.side_effect = [images, containers]
 
     result = await handle_pe_list_images(mock_client, {"pe_host": "10.0.0.1"})
 
     assert result["count"] == 2
-    assert result["images"][0]["name"] == "ubuntu-22.04.iso"
-    assert result["images"][0]["imageType"] == "ISO_IMAGE"
-    assert result["images"][0]["sizeMb"] == pytest.approx(3584.0, rel=0.01)
-    assert result["images"][1]["imageType"] == "DISK_IMAGE"
-    mock_client.pe_list.assert_called_once_with("10.0.0.1", "images")
+    first, second = result["images"]
+    assert first["name"] == "noble-cloud-2404"
+    assert first["imageType"] == "DISK_IMAGE"
+    assert first["sizeMb"] == pytest.approx(3584.0, rel=0.01)
+    assert first["storageContainerUuid"] == "ctr-uuid-1"
+    assert first["storageContainerName"] == "default-container"
+    assert second["storageContainerName"] is None
+    assert "sourceUri" not in first
+    assert mock_client.pe_list.call_args_list[0].args == ("10.0.0.1", "images")
+    assert mock_client.pe_list.call_args_list[1].args == ("10.0.0.1", "storage_containers")
 
 
 @pytest.mark.asyncio
@@ -153,17 +158,19 @@ async def test_get_metro_witness_other_errors_propagate(mock_client):
 
 @pytest.mark.asyncio
 async def test_list_dr_snapshots(mock_client):
-    """Test listing DR snapshots across remote sites."""
+    """Shape of a real remote_sites/dr_snapshots entity (AOS 6.8.1)."""
     mock_client.pe_list.return_value = {
         "entities": [
             {
-                "snapshot_id": "snap-dr-1",
-                "protection_domain_name": "pd-prod",
-                "remote_site_name": "dr-site-east",
-                "consistency_group_name": "cg-web",
-                "created_time_in_usecs": 1700000000000000,
-                "expiration_time_in_usecs": 1700086400000000,
-                "size_in_bytes": 5368709120,
+                "protection_domain_name": "pd-ca-all",
+                "snapshot_id": "ntnx-ms01-ca:34922",
+                "snapshot_uuid": "cd17821d-b3d4-4fde-9a8f-a68ed71e650c",
+                "snapshot_create_time_usecs": 1789956003861954,
+                "snapshot_expiry_time_usecs": 1790560803861954,
+                "state": "AVAILABLE",
+                "consistency_groups": ["ntnxlab-suse-ca", "ntnxlab-ubuntu-ca"],
+                "vms": [{"vm_name": "ntnxlab-suse-ca"}, {"vm_name": "ntnxlab-ubuntu-ca"}],
+                "size_in_bytes": 1143770112,
             }
         ]
     }
@@ -171,9 +178,15 @@ async def test_list_dr_snapshots(mock_client):
     result = await handle_pe_list_dr_snapshots(mock_client, {"pe_host": "10.0.0.1"})
 
     assert result["count"] == 1
-    assert result["drSnapshots"][0]["snapshotId"] == "snap-dr-1"
-    assert result["drSnapshots"][0]["protectionDomainName"] == "pd-prod"
-    assert result["drSnapshots"][0]["remoteSiteName"] == "dr-site-east"
+    snap = result["drSnapshots"][0]
+    assert snap["snapshotId"] == "ntnx-ms01-ca:34922"
+    assert snap["protectionDomainName"] == "pd-ca-all"
+    assert snap["state"] == "AVAILABLE"
+    assert snap["consistencyGroups"] == ["ntnxlab-suse-ca", "ntnxlab-ubuntu-ca"]
+    assert snap["vmNames"] == ["ntnxlab-suse-ca", "ntnxlab-ubuntu-ca"]
+    assert snap["createdTimestamp"] == 1789956003861954
+    assert snap["expirationTimestamp"] == 1790560803861954
+    assert snap["sizeBytes"] == 1143770112
     mock_client.pe_list.assert_called_once_with("10.0.0.1", "remote_sites/dr_snapshots")
 
 
