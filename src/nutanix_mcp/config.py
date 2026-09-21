@@ -276,6 +276,19 @@ class Settings(BaseSettings):
             return True
         return pe_host in self.allowed_pe_hosts
 
+    @property
+    def selectable_pe_hosts(self) -> list[str]:
+        """Every PE host an operator explicitly named, for a UI to offer.
+
+        The allowlist first, in its own order (its first entry is the UI's
+        default), then any host that is configured only through pe_credentials.
+        is_pe_host_allowed() accepts those too, so a picker built from the
+        allowlist alone would hide clusters the API serves.
+        """
+        hosts = list(self.allowed_pe_hosts)
+        hosts += [h for h in self.pe_credentials if h not in hosts]
+        return hosts
+
 
 def get_settings() -> Settings:
     """Load and validate settings."""

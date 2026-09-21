@@ -203,3 +203,32 @@ def test_unconfigured_host_still_blocked_by_allowlist():
 
 def test_empty_allowlist_remains_permissive():
     assert _settings().is_pe_host_allowed("10.9.9.9")
+
+
+# ─── hosts offered to the UI ──────────────────────────────────────────────
+
+
+def _cred(password: str) -> dict[str, str]:
+    return {"username": "admin", "password": password}
+
+
+def test_selectable_hosts_include_credential_only_hosts():
+    s = _settings(allowed_pe_hosts=FL, pe_credentials=json.dumps({CA: _cred("ca-secret")}))
+    assert s.selectable_pe_hosts == [FL, CA]
+
+
+def test_selectable_hosts_keep_allowlist_first_and_do_not_duplicate():
+    s = _settings(
+        allowed_pe_hosts=f"{FL},{CA}",
+        pe_credentials=json.dumps({CA: _cred("ca-secret"), "10.0.2.242": _cred("x")}),
+    )
+    assert s.selectable_pe_hosts == [FL, CA, "10.0.2.242"]
+
+
+def test_selectable_hosts_from_credentials_alone():
+    s = _settings(pe_credentials=json.dumps({CA: _cred("ca-secret")}))
+    assert s.selectable_pe_hosts == [CA]
+
+
+def test_selectable_hosts_empty_when_nothing_named():
+    assert _settings().selectable_pe_hosts == []
