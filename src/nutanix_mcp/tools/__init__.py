@@ -15,6 +15,7 @@ from nutanix_mcp.tools.asbuilt import ASBUILT_TOOLS
 from nutanix_mcp.tools.category import CATEGORY_TOOLS
 from nutanix_mcp.tools.cluster import CLUSTER_TOOLS
 from nutanix_mcp.tools.networking import NETWORKING_TOOLS
+from nutanix_mcp.tools.pe_compute import PE_COMPUTE_TOOLS
 from nutanix_mcp.tools.prism_element import PE_TOOLS
 from nutanix_mcp.tools.snapshot import SNAPSHOT_TOOLS
 from nutanix_mcp.tools.task import TASK_TOOLS
@@ -107,7 +108,7 @@ def get_all_tools(pe_only: bool = False) -> list[dict[str, Any]]:
     Prism Central: the model never sees central-plane tools it cannot use.
     """
     tools = (
-        VM_TOOLS + CLUSTER_TOOLS + PE_TOOLS + NETWORKING_TOOLS + TASK_TOOLS
+        VM_TOOLS + CLUSTER_TOOLS + PE_TOOLS + PE_COMPUTE_TOOLS + NETWORKING_TOOLS + TASK_TOOLS
         + ALERT_TOOLS + CATEGORY_TOOLS + SNAPSHOT_TOOLS + ASBUILT_TOOLS
     )
     if pe_only:
