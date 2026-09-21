@@ -1,6 +1,7 @@
 """Tests for MCP server plumbing: structured output, error results, resources."""
 
 import json
+import os
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -12,9 +13,23 @@ from nutanix_mcp.config import Settings
 from nutanix_mcp.server import _error_result, _jsonable, create_server
 
 
+@pytest.fixture(autouse=True)
+def _isolate_env(monkeypatch):
+    """Keep these tests off the operator's real configuration.
+
+    Settings reads a .env from the current directory and NUTANIX_* from the
+    environment. A PE-only deployment sets NUTANIX_PE_ONLY=true, which makes
+    the server refuse every non-pe_ tool, so the list_vms tests below failed
+    on any checkout configured for one.
+    """
+    for key in [k for k in os.environ if k.startswith("NUTANIX_")]:
+        monkeypatch.delenv(key, raising=False)
+
+
 @pytest.fixture
 def settings():
-    return Settings(host="pc.example.com", username="admin", password="secret")
+    # _env_file=None completes the isolation started by the fixture above.
+    return Settings(_env_file=None, host="pc.example.com", username="admin", password="secret")
 
 
 def test_jsonable_handles_datetimes():
