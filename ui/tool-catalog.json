@@ -3,7 +3,7 @@
     {
       "name": "list_vms",
       "title": "List VMs",
-      "description": "List ALL virtual machines on Nutanix (auto-paginates internally). Returns complete results in one call — no manual pagination needed. Use 'cluster_name' to filter VMs to a specific cluster by name. Use 'filter' to narrow results via OData. Use 'limit' only if you want a subset.",
+      "description": "List ALL virtual machines on Nutanix (auto-paginates internally). Returns complete results in one call \u2014 no manual pagination needed. Use 'cluster_name' to filter VMs to a specific cluster by name. Use 'filter' to narrow results via OData. Use 'limit' only if you want a subset.",
       "min_role": "viewer",
       "destructive": false,
       "read_only": true,
@@ -219,7 +219,7 @@
     {
       "name": "list_clusters",
       "title": "List Clusters",
-      "description": "List ALL Nutanix clusters registered with Prism Central (auto-paginates internally). Returns complete results in one call — no manual pagination needed.",
+      "description": "List ALL Nutanix clusters registered with Prism Central (auto-paginates internally). Returns complete results in one call \u2014 no manual pagination needed.",
       "min_role": "viewer",
       "destructive": false,
       "read_only": true,
@@ -256,7 +256,7 @@
     {
       "name": "list_hosts",
       "title": "List Hosts",
-      "description": "List ALL hypervisor hosts (auto-paginates internally). Returns complete results in one call — no manual pagination needed. Optionally filter by cluster UUID.",
+      "description": "List ALL hypervisor hosts (auto-paginates internally). Returns complete results in one call \u2014 no manual pagination needed. Optionally filter by cluster UUID.",
       "min_role": "viewer",
       "destructive": false,
       "read_only": true,
@@ -301,7 +301,7 @@
     {
       "name": "list_storage_containers",
       "title": "List Storage Containers",
-      "description": "List ALL storage containers (auto-paginates internally). Returns complete results in one call — no manual pagination needed.",
+      "description": "List ALL storage containers (auto-paginates internally). Returns complete results in one call \u2014 no manual pagination needed.",
       "min_role": "viewer",
       "destructive": false,
       "read_only": true,
@@ -447,7 +447,7 @@
     {
       "name": "pe_list_vms",
       "title": "PE: List VMs",
-      "description": "List VMs on a specific Prism Element cluster. Returns VM names, UUIDs, power states, and resource allocation.",
+      "description": "List VMs on a specific Prism Element cluster. Returns VM names, UUIDs, power states, resource allocation, and each VM's NICs with their MAC and IP addresses.",
       "min_role": "viewer",
       "destructive": false,
       "read_only": true,
@@ -906,7 +906,7 @@
     {
       "name": "pe_list_cvms",
       "title": "PE: List CVMs",
-      "description": "List Controller VMs (CVMs) on a Prism Element cluster. Returns CVM IP, memory allocation, power state, and associated host.",
+      "description": "List Controller VMs (CVMs) on a Prism Element cluster. Returns each CVM's name, IP addresses, memory, vCPUs, power state, and the host it runs on.",
       "min_role": "viewer",
       "destructive": false,
       "read_only": true,
@@ -991,7 +991,7 @@
     {
       "name": "pe_list_health_checks",
       "title": "PE: List Health Checks",
-      "description": "List NCC-style health check results on a Prism Element cluster. Returns check names, statuses, and any warnings or failures.",
+      "description": "List the health checks defined on a Prism Element cluster. Returns each check's name, type, whether it is enabled, its schedule, and the alert severities it raises. This is the check catalogue, not check results; use pe_list_alerts for what is currently firing.",
       "min_role": "viewer",
       "destructive": false,
       "read_only": true,
@@ -1011,7 +1011,7 @@
     {
       "name": "pe_list_images",
       "title": "PE: List Images",
-      "description": "List images (ISOs, disk images) on a Prism Element cluster. Returns image name, type, state, size, and source URI.",
+      "description": "List images (ISOs, disk images) on a Prism Element cluster. Returns image name, type, state, size, and storage container.",
       "min_role": "viewer",
       "destructive": false,
       "read_only": true,
@@ -1249,7 +1249,7 @@
     {
       "name": "pe_delete_protection_domain",
       "title": "PE: Delete Protection Domain",
-      "description": "Delete a protection domain from a Prism Element cluster. Requires confirm=true. The protection domain must have no protected VMs.",
+      "description": "Delete a protection domain from a Prism Element cluster. Requires confirm=true. The protection domain must have no protected VMs AND no local snapshots \u2014 Prism rejects the delete with HTTP 422 ('has N local snapshot(s)') otherwise. Use pe_list_pd_snapshots and pe_delete_pd_snapshot to clear snapshots first.",
       "min_role": "admin",
       "destructive": true,
       "read_only": false,
@@ -1276,9 +1276,150 @@
       }
     },
     {
+      "name": "pe_list_pd_snapshots",
+      "title": "PE: List PD Snapshots",
+      "description": "List the local snapshots held by a protection domain on a Prism Element cluster. Returns snapshot IDs and state \u2014 the IDs needed to clear snapshots before deleting the protection domain.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pe_host": {
+            "type": "string",
+            "description": "Prism Element CVM IP or hostname."
+          },
+          "pd_name": {
+            "type": "string",
+            "description": "Protection domain name."
+          }
+        },
+        "required": [
+          "pe_host",
+          "pd_name"
+        ]
+      }
+    },
+    {
+      "name": "pe_delete_pd_snapshot",
+      "title": "PE: Delete PD Snapshot",
+      "description": "Delete a single local snapshot from a protection domain on a Prism Element cluster. Requires confirm=true. Needed to clear snapshots before a protection domain can be deleted.",
+      "min_role": "admin",
+      "destructive": true,
+      "read_only": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pe_host": {
+            "type": "string",
+            "description": "Prism Element CVM IP or hostname."
+          },
+          "pd_name": {
+            "type": "string",
+            "description": "Protection domain name."
+          },
+          "snapshot_id": {
+            "type": "string",
+            "description": "The snapshot ID to delete (from pe_list_pd_snapshots)."
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "Must be true to proceed."
+          }
+        },
+        "required": [
+          "pe_host",
+          "pd_name",
+          "snapshot_id"
+        ]
+      }
+    },
+    {
+      "name": "pe_get_vm",
+      "title": "PE: Get VM",
+      "description": "Get one VM's full configuration on a Prism Element cluster: power state, vCPUs, memory, host, boot mode, every disk (bus, size, container, CD-ROM or not) and every NIC with its MAC and IP addresses. Find the VM's UUID with pe_list_vms.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pe_host": {
+            "type": "string",
+            "description": "Prism Element CVM IP address or hostname"
+          },
+          "vm_uuid": {
+            "type": "string",
+            "description": "UUID of the VM"
+          }
+        },
+        "required": [
+          "pe_host",
+          "vm_uuid"
+        ]
+      }
+    },
+    {
+      "name": "pe_list_tasks",
+      "title": "PE: List Tasks",
+      "description": "List recent tasks on a Prism Element cluster, newest first: what ran, on which entities, whether it succeeded, and when. Optionally narrow to the tasks that touched one entity (a VM, host, image...).",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pe_host": {
+            "type": "string",
+            "description": "Prism Element CVM IP address or hostname"
+          },
+          "count": {
+            "type": "integer",
+            "description": "Maximum number of tasks to return (default 20)"
+          },
+          "entity_uuid": {
+            "type": "string",
+            "description": "Only tasks that touched this entity UUID"
+          },
+          "include_completed": {
+            "type": "boolean",
+            "description": "Include finished tasks (default true); false shows only running ones"
+          }
+        },
+        "required": [
+          "pe_host"
+        ]
+      }
+    },
+    {
+      "name": "pe_get_task",
+      "title": "PE: Get Task",
+      "description": "Get one task on a Prism Element cluster by UUID: its operation, status, percent complete, affected entities and timings. Use it to follow a task another tool started.",
+      "min_role": "viewer",
+      "destructive": false,
+      "read_only": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pe_host": {
+            "type": "string",
+            "description": "Prism Element CVM IP address or hostname"
+          },
+          "task_uuid": {
+            "type": "string",
+            "description": "UUID of the task"
+          }
+        },
+        "required": [
+          "pe_host",
+          "task_uuid"
+        ]
+      }
+    },
+    {
       "name": "list_subnets",
       "title": "List Subnets",
-      "description": "List ALL subnets/VLANs in Prism Central (auto-paginates internally). Returns complete results in one call — no manual pagination needed.",
+      "description": "List ALL subnets/VLANs in Prism Central (auto-paginates internally). Returns complete results in one call \u2014 no manual pagination needed.",
       "min_role": "viewer",
       "destructive": false,
       "read_only": true,
@@ -1449,7 +1590,7 @@
     {
       "name": "list_images",
       "title": "List Images",
-      "description": "List ALL disk images (ISOs, QCOW2) in the image library (auto-paginates internally). Returns complete results in one call — no manual pagination needed.",
+      "description": "List ALL disk images (ISOs, QCOW2) in the image library (auto-paginates internally). Returns complete results in one call \u2014 no manual pagination needed.",
       "min_role": "viewer",
       "destructive": false,
       "read_only": true,
@@ -1490,7 +1631,7 @@
     {
       "name": "list_categories",
       "title": "List Categories",
-      "description": "List ALL category keys and values (auto-paginates internally). Returns complete results in one call — no manual pagination needed.",
+      "description": "List ALL category keys and values (auto-paginates internally). Returns complete results in one call \u2014 no manual pagination needed.",
       "min_role": "viewer",
       "destructive": false,
       "read_only": true,
@@ -1531,7 +1672,7 @@
     {
       "name": "list_tasks",
       "title": "List Tasks",
-      "description": "List ALL recent Nutanix tasks (auto-paginates internally). Returns complete results in one call — no manual pagination needed. Use filter to narrow by status (RUNNING, FAILED, SUCCEEDED).",
+      "description": "List ALL recent Nutanix tasks (auto-paginates internally). Returns complete results in one call \u2014 no manual pagination needed. Use filter to narrow by status (RUNNING, FAILED, SUCCEEDED).",
       "min_role": "viewer",
       "destructive": false,
       "read_only": true,
@@ -1573,7 +1714,7 @@
     {
       "name": "list_alerts",
       "title": "List Alerts",
-      "description": "List ALL alerts from Prism Central (auto-paginates internally). Returns complete results in one call — no manual pagination needed. Supports filtering by severity and resolved status.",
+      "description": "List ALL alerts from Prism Central (auto-paginates internally). Returns complete results in one call \u2014 no manual pagination needed. Supports filtering by severity and resolved status.",
       "min_role": "viewer",
       "destructive": false,
       "read_only": true,
@@ -1715,7 +1856,7 @@
     {
       "name": "list_entities_by_category",
       "title": "List Entities By Category",
-      "description": "Find ALL VMs tagged with a specific category key:value pair (auto-paginates internally). Returns complete results in one call — no manual pagination needed.",
+      "description": "Find ALL VMs tagged with a specific category key:value pair (auto-paginates internally). Returns complete results in one call \u2014 no manual pagination needed.",
       "min_role": "viewer",
       "destructive": false,
       "read_only": true,
@@ -1821,7 +1962,7 @@
     {
       "name": "generate_asbuilt",
       "title": "Generate AsBuilt",
-      "description": "Generate an infrastructure AsBuilt report from a Nutanix Prism Element cluster. Accepts a PE IP address, cluster name, or cluster UUID — cluster names and UUIDs are auto-resolved to the PE external IP via Prism Central. Queries live cluster data and returns a structured Markdown report with tables and Mermaid topology diagrams. Use 'sections' to include only specific parts. Available sections: overview, system, hosts, vms, networks, storage, protection_domains, alerts, health.",
+      "description": "Generate an infrastructure AsBuilt report from a Nutanix Prism Element cluster. Accepts a PE IP address, cluster name, or cluster UUID \u2014 cluster names and UUIDs are auto-resolved to the PE external IP via Prism Central. Queries live cluster data and returns a structured Markdown report with tables and Mermaid topology diagrams. Use 'sections' to include only specific parts. Available sections: overview, system, hosts, vms, networks, storage, protection_domains, alerts, health.",
       "min_role": "viewer",
       "destructive": false,
       "read_only": true,
@@ -1879,65 +2020,6 @@
       "inputSchema": {
         "type": "object",
         "properties": {}
-      }
-    },
-    {
-      "name": "pe_list_pd_snapshots",
-      "title": "PE: List PD Snapshots",
-      "description": "List the local snapshots held by a protection domain on a Prism Element cluster. Returns snapshot IDs and state — the IDs needed to clear snapshots before deleting the protection domain.",
-      "min_role": "viewer",
-      "destructive": false,
-      "read_only": true,
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "pe_host": {
-            "type": "string",
-            "description": "Prism Element CVM IP or hostname."
-          },
-          "pd_name": {
-            "type": "string",
-            "description": "Protection domain name."
-          }
-        },
-        "required": [
-          "pe_host",
-          "pd_name"
-        ]
-      }
-    },
-    {
-      "name": "pe_delete_pd_snapshot",
-      "title": "PE: Delete PD Snapshot",
-      "description": "Delete a single local snapshot from a protection domain on a Prism Element cluster. Requires confirm=true. Needed to clear snapshots before a protection domain can be deleted.",
-      "min_role": "admin",
-      "destructive": true,
-      "read_only": false,
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "pe_host": {
-            "type": "string",
-            "description": "Prism Element CVM IP or hostname."
-          },
-          "pd_name": {
-            "type": "string",
-            "description": "Protection domain name."
-          },
-          "snapshot_id": {
-            "type": "string",
-            "description": "The snapshot ID to delete (from pe_list_pd_snapshots)."
-          },
-          "confirm": {
-            "type": "boolean",
-            "description": "Must be true to proceed."
-          }
-        },
-        "required": [
-          "pe_host",
-          "pd_name",
-          "snapshot_id"
-        ]
       }
     }
   ]

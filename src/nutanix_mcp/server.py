@@ -36,6 +36,7 @@ from nutanix_mcp.tools.asbuilt import ASBUILT_HANDLERS
 from nutanix_mcp.tools.category import CATEGORY_HANDLERS
 from nutanix_mcp.tools.cluster import CLUSTER_HANDLERS
 from nutanix_mcp.tools.networking import NETWORKING_HANDLERS
+from nutanix_mcp.tools.pe_compute import PE_COMPUTE_HANDLERS
 from nutanix_mcp.tools.prism_element import PE_HANDLERS
 from nutanix_mcp.tools.snapshot import SNAPSHOT_HANDLERS
 from nutanix_mcp.tools.task import TASK_HANDLERS
@@ -48,6 +49,7 @@ ALL_HANDLERS: dict[str, Any] = {
     **VM_HANDLERS,
     **CLUSTER_HANDLERS,
     **PE_HANDLERS,
+    **PE_COMPUTE_HANDLERS,
     **NETWORKING_HANDLERS,
     **TASK_HANDLERS,
     **ALERT_HANDLERS,
