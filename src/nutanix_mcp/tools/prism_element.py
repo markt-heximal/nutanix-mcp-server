@@ -32,7 +32,8 @@ PE_TOOLS: list[dict] = [
         "name": "pe_list_vms",
         "description": (
             "List VMs on a specific Prism Element cluster. "
-            "Returns VM names, UUIDs, power states, and resource allocation."
+            "Returns VM names, UUIDs, power states, resource allocation, "
+            "and each VM's NICs with their MAC and IP addresses."
         ),
         "inputSchema": {
             "type": "object",
@@ -420,7 +421,8 @@ PE_TOOLS: list[dict] = [
         "name": "pe_list_cvms",
         "description": (
             "List Controller VMs (CVMs) on a Prism Element cluster. "
-            "Returns CVM IP, memory allocation, power state, and associated host."
+            "Returns each CVM's name, IP addresses, memory, vCPUs, power state, "
+            "and the host it runs on."
         ),
         "inputSchema": {
             "type": "object",
@@ -494,8 +496,10 @@ PE_TOOLS: list[dict] = [
     {
         "name": "pe_list_health_checks",
         "description": (
-            "List NCC-style health check results on a Prism Element cluster. "
-            "Returns check names, statuses, and any warnings or failures."
+            "List the health checks defined on a Prism Element cluster. "
+            "Returns each check's name, type, whether it is enabled, its schedule, "
+            "and the alert severities it raises. This is the check catalogue, not "
+            "check results; use pe_list_alerts for what is currently firing."
         ),
         "inputSchema": {
             "type": "object",
@@ -513,7 +517,7 @@ PE_TOOLS: list[dict] = [
         "name": "pe_list_images",
         "description": (
             "List images (ISOs, disk images) on a Prism Element cluster. "
-            "Returns image name, type, state, size, and source URI."
+            "Returns image name, type, state, size, and storage container."
         ),
         "inputSchema": {
             "type": "object",
@@ -757,7 +761,13 @@ async def handle_pe_list_vms(client: NutanixClient, arguments: dict[str, Any]) -
     pe_host = arguments["pe_host"]
     count = arguments.get("count")
 
-    result = await client.pe_list(pe_host, "vms", count=count)
+    # IPs are per NIC and only returned when NIC config is requested; there is
+    # no top-level ip_addresses on a v2 VM. Reading one made every VM's IP list
+    # empty (all 10 lab VMs, verified live on AOS 6.8.1).
+    params = {"include_vm_nic_config": "true"}
+    if count is not None:
+        params["count"] = str(count)
+    result = await client.pe_get(pe_host, "vms", params=params)
     entities = result.get("entities", [])
 
     return {
@@ -770,10 +780,30 @@ async def handle_pe_list_vms(client: NutanixClient, arguments: dict[str, Any]) -
                 "numVcpus": vm.get("num_vcpus"),
                 "memoryMb": vm.get("memory_mb"),
                 "hostUuid": vm.get("host_uuid"),
-                "ipAddresses": vm.get("ip_addresses", []),
+                "ipAddresses": vm_ip_addresses(vm),
+                "nics": [vm_nic_summary(n) for n in vm.get("vm_nics") or []],
             }
             for vm in entities
         ],
+    }
+
+
+def vm_ip_addresses(vm: dict[str, Any]) -> list[str]:
+    """Every IP on a VM's NICs, de-duplicated, in NIC order."""
+    ips: list[str] = []
+    for nic in vm.get("vm_nics") or []:
+        for ip in nic.get("ip_addresses") or ([nic["ip_address"]] if nic.get("ip_address") else []):
+            if ip not in ips:
+                ips.append(ip)
+    return ips
+
+
+def vm_nic_summary(nic: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "macAddress": nic.get("mac_address"),
+        "networkUuid": nic.get("network_uuid"),
+        "ipAddresses": nic.get("ip_addresses") or ([nic["ip_address"]] if nic.get("ip_address") else []),
+        "isConnected": nic.get("is_connected"),
     }
 
 
@@ -989,9 +1019,8 @@ async def handle_pe_list_snapshots(client: NutanixClient, arguments: dict[str, A
         "snapshots": [
             {
                 "snapshotId": s.get("snapshot_id"),
-                "snapshotName": s.get("snapshot_name"),
-                "createdTimestamp": s.get("created_time_stamp_in_usecs"),
-                "expiryTimestamp": s.get("expiry_time_stamp_in_usecs"),
+                "createdTimestamp": s.get("snapshot_create_time_usecs"),
+                "expiryTimestamp": s.get("snapshot_expiry_time_usecs"),
                 "state": s.get("state"),
             }
             for s in entities
@@ -1007,9 +1036,11 @@ async def handle_pe_get_auth_config(client: NutanixClient, arguments: dict[str, 
     pe_host = arguments["pe_host"]
     result = await client.pe_get(pe_host, "authconfig")
 
-    directory_list = result.get("directoryList", [])
+    # v2 answers snake_case (auth_type_list/directory_list, AOS 6.8.1); the
+    # camelCase names are kept as a fallback for older releases.
+    directory_list = result.get("directory_list") or result.get("directoryList") or []
     return {
-        "authTypes": result.get("authTypeList", []),
+        "authTypes": result.get("auth_type_list") or result.get("authTypeList") or [],
         "directories": [
             {
                 "name": d.get("name"),
@@ -1021,7 +1052,6 @@ async def handle_pe_get_auth_config(client: NutanixClient, arguments: dict[str, 
             }
             for d in directory_list
         ],
-        "clientAuth": result.get("clientAuth"),
     }
 
 
@@ -1352,20 +1382,25 @@ async def handle_pe_list_cvms(client: NutanixClient, arguments: dict[str, Any]) 
     """List Controller VMs (CVMs) from Prism Element v2 API."""
     pe_host = arguments["pe_host"]
 
-    result = await client.pe_list(pe_host, "vms", filter_criteria="is_cvm==true")
-    entities = result.get("entities", [])
+    # The v2 /vms endpoint ignores filter_criteria=is_cvm==true and never lists
+    # CVMs, so the old query returned the GUEST VMs labelled as CVMs. v1 /vms
+    # includes the CVM and marks it controllerVm (verified on AOS 6.8.1).
+    result = await client.pe_v1_get(pe_host, "vms")
+    entities = [vm for vm in result.get("entities", []) if vm.get("controllerVm")]
 
     return {
         "count": len(entities),
         "cvms": [
             {
-                "name": vm.get("name"),
+                "name": vm.get("vmName"),
                 "uuid": vm.get("uuid"),
-                "powerState": vm.get("power_state"),
-                "memoryMb": vm.get("memory_mb"),
-                "numVcpus": vm.get("num_vcpus"),
-                "hostUuid": vm.get("host_uuid"),
-                "ipAddresses": vm.get("ip_addresses", []),
+                "powerState": vm.get("powerState"),
+                "memoryMb": vm["memoryCapacityInBytes"] // (1024 * 1024)
+                if vm.get("memoryCapacityInBytes") is not None else None,
+                "numVcpus": vm.get("numVCpus"),
+                "hostName": vm.get("hostName"),
+                "hostUuid": vm.get("hostUuid"),
+                "ipAddresses": vm.get("ipAddresses") or [],
             }
             for vm in entities
         ],
@@ -1486,7 +1521,11 @@ async def handle_pe_get_cluster_health(client: NutanixClient, arguments: dict[st
 
 
 async def handle_pe_list_health_checks(client: NutanixClient, arguments: dict[str, Any]) -> dict[str, Any]:
-    """List health check results from Prism Element v2 API."""
+    """List health check definitions from Prism Element v2 API.
+
+    This endpoint describes the checks (enabled, schedule, alert severities);
+    it carries no per-check results, so none are reported.
+    """
     pe_host = arguments["pe_host"]
     result = await client.pe_list(pe_host, "health_checks")
     entities = result.get("entities", result.get("health_check_list", []))
@@ -1501,9 +1540,12 @@ async def handle_pe_list_health_checks(client: NutanixClient, arguments: dict[st
                     "description": hc.get("description"),
                     "affectedEntityTypes": hc.get("affected_entity_types", []),
                     "checkType": hc.get("check_type"),
-                    "severity": hc.get("severity"),
-                    "lastExecutionStatus": hc.get("last_execution_status"),
-                    "lastPassedTimestamp": hc.get("last_passed_time_stamp_in_usecs"),
+                    "enabled": hc.get("enabled"),
+                    "scheduleIntervalSecs": hc.get("schedule_interval_in_secs"),
+                    "alertSeverities": [
+                        t.get("severity") for t in hc.get("severity_threshold_infos") or []
+                        if t.get("enabled")
+                    ],
                 }
                 for hc in entities
             ],
@@ -1519,6 +1561,12 @@ async def handle_pe_list_images(client: NutanixClient, arguments: dict[str, Any]
     pe_host = arguments["pe_host"]
     result = await client.pe_list(pe_host, "images")
     entities = result.get("entities", [])
+    # v2 images carry storage_container_uuid only; there is no name or
+    # source_uri field on AOS 6.8.1.
+    containers = await client.pe_list(pe_host, "storage_containers")
+    container_names = {
+        c.get("storage_container_uuid"): c.get("name") for c in containers.get("entities", [])
+    }
 
     return {
         "count": len(entities),
@@ -1529,8 +1577,8 @@ async def handle_pe_list_images(client: NutanixClient, arguments: dict[str, Any]
                 "imageType": img.get("image_type"),
                 "imageState": img.get("image_state"),
                 "sizeMb": round(img.get("vm_disk_size", 0) / (1024 * 1024), 1) if img.get("vm_disk_size") else None,
-                "sourceUri": img.get("source_uri"),
-                "storageContainerName": img.get("storage_container_name"),
+                "storageContainerUuid": img.get("storage_container_uuid"),
+                "storageContainerName": container_names.get(img.get("storage_container_uuid")),
                 "createdTimestamp": img.get("created_time_in_usecs"),
                 "updatedTimestamp": img.get("updated_time_in_usecs"),
             }
@@ -1552,7 +1600,8 @@ async def handle_pe_list_networks(client: NutanixClient, arguments: dict[str, An
                 "name": net.get("name"),
                 "uuid": net.get("uuid"),
                 "vlanId": net.get("vlan_id"),
-                "networkType": net.get("network_type"),
+                "vswitchName": net.get("vswitch_name"),
+                "ipamEnabled": (net.get("ip_config") or {}).get("ipam_enabled"),
                 "ipConfig": {
                     "networkAddress": net.get("ip_config", {}).get("network_address") if net.get("ip_config") else None,
                     "prefixLength": net.get("ip_config", {}).get("prefix_length") if net.get("ip_config") else None,
@@ -1605,10 +1654,11 @@ async def handle_pe_list_dr_snapshots(client: NutanixClient, arguments: dict[str
             {
                 "snapshotId": snap.get("snapshot_id"),
                 "protectionDomainName": snap.get("protection_domain_name"),
-                "remoteSiteName": snap.get("remote_site_name"),
-                "consistencyGroupName": snap.get("consistency_group_name"),
-                "createdTimestamp": snap.get("created_time_in_usecs"),
-                "expirationTimestamp": snap.get("expiration_time_in_usecs"),
+                "state": snap.get("state"),
+                "consistencyGroups": snap.get("consistency_groups") or [],
+                "vmNames": [v.get("vm_name") for v in snap.get("vms") or []],
+                "createdTimestamp": snap.get("snapshot_create_time_usecs"),
+                "expirationTimestamp": snap.get("snapshot_expiry_time_usecs"),
                 "sizeBytes": snap.get("size_in_bytes"),
             }
             for snap in entities
@@ -1729,8 +1779,8 @@ async def handle_pe_list_pd_snapshots(client: NutanixClient, arguments: dict[str
             {
                 "snapshotId": s.get("snapshot_id"),
                 "state": s.get("state"),
-                "createTimeUsecs": s.get("create_time_usecs"),
-                "expiryTimeUsecs": s.get("expiry_time_usecs"),
+                "createTimeUsecs": s.get("snapshot_create_time_usecs"),
+                "expiryTimeUsecs": s.get("snapshot_expiry_time_usecs"),
                 "sizeBytes": s.get("size_in_bytes"),
             }
             for s in entities

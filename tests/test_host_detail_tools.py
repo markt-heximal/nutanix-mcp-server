@@ -131,34 +131,42 @@ async def test_get_host_nics(mock_client):
 
 @pytest.mark.asyncio
 async def test_list_cvms(mock_client):
-    """Test listing Controller VMs."""
-    mock_client.pe_list.return_value = {
+    """CVMs come from v1 /vms (controllerVm), never v2 — v2 lists guests only."""
+    mock_client.pe_v1_get.return_value = {
         "entities": [
             {
-                "name": "NTNX-node1-CVM",
+                "vmName": "NTNX-008fab64-A-CVM",
                 "uuid": "cvm-uuid-1",
-                "power_state": "on",
-                "memory_mb": 32768,
-                "num_vcpus": 12,
-                "host_uuid": "host-uuid-1",
-                "ip_addresses": ["10.0.0.11"],
+                "powerState": "on",
+                "memoryCapacityInBytes": 21474836480,
+                "numVCpus": 6,
+                "hostName": "NTNX-008fab64-A",
+                "hostUuid": "host-uuid-1",
+                "ipAddresses": ["10.0.1.242", "192.168.5.2"],
+                "controllerVm": True,
             },
             {
-                "name": "NTNX-node2-CVM",
-                "uuid": "cvm-uuid-2",
-                "power_state": "on",
-                "memory_mb": 32768,
-                "num_vcpus": 12,
-                "host_uuid": "host-uuid-2",
-                "ip_addresses": ["10.0.0.12"],
+                "vmName": "ntnxlab-ubuntu-fl",
+                "uuid": "guest-uuid-1",
+                "powerState": "on",
+                "memoryCapacityInBytes": 4294967296,
+                "numVCpus": 2,
+                "hostName": "NTNX-008fab64-A",
+                "hostUuid": "host-uuid-1",
+                "ipAddresses": ["10.0.1.245"],
+                "controllerVm": False,
             },
         ]
     }
 
     result = await handle_pe_list_cvms(mock_client, {"pe_host": "10.0.0.1"})
 
-    assert result["count"] == 2
-    assert result["cvms"][0]["name"] == "NTNX-node1-CVM"
-    assert result["cvms"][0]["memoryMb"] == 32768
-    assert result["cvms"][0]["ipAddresses"] == ["10.0.0.11"]
-    mock_client.pe_list.assert_called_once_with("10.0.0.1", "vms", filter_criteria="is_cvm==true")
+    assert result["count"] == 1
+    cvm = result["cvms"][0]
+    assert cvm["name"] == "NTNX-008fab64-A-CVM"
+    assert cvm["memoryMb"] == 20480
+    assert cvm["numVcpus"] == 6
+    assert cvm["hostName"] == "NTNX-008fab64-A"
+    assert cvm["ipAddresses"] == ["10.0.1.242", "192.168.5.2"]
+    mock_client.pe_v1_get.assert_called_once_with("10.0.0.1", "vms")
+
