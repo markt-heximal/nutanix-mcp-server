@@ -336,10 +336,10 @@ async def me(identity: Identity = Depends(require_identity)) -> dict[str, str]:
 async def config(identity: Identity = Depends(require_identity)) -> dict[str, Any]:
     """UI bootstrap: default PE host, allowlist, and role ranking."""
     # For pe_* tools the default host must be a real Prism Element, not the
-    # Prism Central address in NUTANIX_HOST. Prefer the first allowlisted PE.
-    default_pe_host = (
-        settings.allowed_pe_hosts[0] if settings.allowed_pe_hosts else settings.host
-    )
+    # Prism Central address in NUTANIX_HOST. Prefer the first allowlisted PE,
+    # then the first credential-configured one.
+    pe_hosts = settings.selectable_pe_hosts
+    default_pe_host = pe_hosts[0] if pe_hosts else settings.host
     return {
         # Prism Central is the primary data plane (clusters, VMs, hosts, alerts
         # via the v4 APIs). It is null in pe_only deployments.
@@ -347,7 +347,9 @@ async def config(identity: Identity = Depends(require_identity)) -> dict[str, An
         "prism_central_port": settings.port,
         # Prism Element powers the pe_* tools (storage, health, data protection).
         "default_pe_host": default_pe_host,
-        "allowed_pe_hosts": settings.allowed_pe_hosts,
+        # Allowlist plus hosts configured only in NUTANIX_PE_CREDENTIALS — both
+        # are accepted by the PE tools, so the UI's cluster picker needs both.
+        "allowed_pe_hosts": pe_hosts,
         "pe_only": settings.pe_only,
         "roles": ROLE_RANK,
         "your_role": identity.role,
