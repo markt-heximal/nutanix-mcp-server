@@ -19,7 +19,7 @@ Body: `{ "username": "...", "password": "..." }`
 ### `GET /api/me` → `{ "username", "role" }`
 ### `GET /api/config` → `{ "default_pe_host", "allowed_pe_hosts", "pe_only", "roles", "your_role" }`
 Use `default_pe_host` to prefill the `pe_host` argument on Prism Element calls.
-`allowed_pe_hosts` lists every cluster the API will accept: `NUTANIX_ALLOWED_PE_HOSTS` in order, then any host configured only in `NUTANIX_PE_CREDENTIALS`. Build the cluster picker from it.
+`allowed_pe_hosts` lists every configured cluster that is answering: `NUTANIX_ALLOWED_PE_HOSTS` in order, then any host configured only in `NUTANIX_PE_CREDENTIALS`, minus any host whose Prism did not answer an unauthenticated probe (results cached ~30 s). Build the cluster picker from it. `default_pe_host` is the first answering host, or `null` when clusters are configured but none answer — show that as "no cluster reachable" rather than prefilling a host.
 
 ## Tool catalogue
 

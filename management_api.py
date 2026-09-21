@@ -80,6 +80,7 @@ load_dotenv(".management.env", override=False)
 
 from nutanix_mcp.client import NutanixAPIError, NutanixClient  # noqa: E402
 from nutanix_mcp.config import get_settings  # noqa: E402
+from nutanix_mcp.pe_probe import PEHostProbe  # noqa: E402
 from nutanix_mcp.server import ALL_HANDLERS  # noqa: E402
 from nutanix_mcp.tools import get_all_tools  # noqa: E402
 
@@ -109,6 +110,11 @@ def _tool_min_role(tool: dict[str, Any]) -> str:
 
 # Load connection settings early so the tool catalogue can honour PE-only mode.
 settings = get_settings()
+
+# /api/config advertises only the PE hosts that answer, so the UI never offers
+# a cluster that is configured but down. Cached briefly; see pe_probe.py for why
+# the probe never sends credentials.
+_pe_probe = PEHostProbe(port=settings.port, verify_ssl=settings.verify_ssl)
 
 # Build the catalogue once at import time so every request is a cheap lookup.
 # In PE-only deployments (no Prism Central), advertise ONLY the pe_* tools —
@@ -337,9 +343,17 @@ async def config(identity: Identity = Depends(require_identity)) -> dict[str, An
     """UI bootstrap: default PE host, allowlist, and role ranking."""
     # For pe_* tools the default host must be a real Prism Element, not the
     # Prism Central address in NUTANIX_HOST. Prefer the first allowlisted PE,
-    # then the first credential-configured one.
-    pe_hosts = settings.selectable_pe_hosts
-    default_pe_host = pe_hosts[0] if pe_hosts else settings.host
+    # then the first credential-configured one — among those that answer.
+    configured = settings.selectable_pe_hosts
+    pe_hosts = await _pe_probe.answering(configured)
+    if pe_hosts:
+        default_pe_host: Optional[str] = pe_hosts[0]
+    elif configured:
+        # Hosts are configured but none answer. Defaulting to one would
+        # advertise a dead cluster, and NUTANIX_HOST is not a PE.
+        default_pe_host = None
+    else:
+        default_pe_host = settings.host
     return {
         # Prism Central is the primary data plane (clusters, VMs, hosts, alerts
         # via the v4 APIs). It is null in pe_only deployments.
@@ -348,7 +362,8 @@ async def config(identity: Identity = Depends(require_identity)) -> dict[str, An
         # Prism Element powers the pe_* tools (storage, health, data protection).
         "default_pe_host": default_pe_host,
         # Allowlist plus hosts configured only in NUTANIX_PE_CREDENTIALS — both
-        # are accepted by the PE tools, so the UI's cluster picker needs both.
+        # are accepted by the PE tools, so the UI's cluster picker needs both —
+        # minus any that do not answer right now.
         "allowed_pe_hosts": pe_hosts,
         "pe_only": settings.pe_only,
         "roles": ROLE_RANK,
